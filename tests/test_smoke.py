@@ -5,8 +5,15 @@ def test_smoke_imports():
 
     for mod in [
         "agent.core",
+        "agent.model_client",
+        "agent.notebook",
+        "agent.planner",
+        "agent.executor",
         "rag.build_index",
+        "rag.embeddings",
+        "rag.retriever",
         "model_server.server",
+        "docs_chat.backend",
         "cli.main",
     ]:
         importlib.import_module(mod)

@@ -11,6 +11,7 @@ The system is composed of several logical components:
 - **cli/**: command line interface used by end users.
 - **docs_chat/**: backend API to power an embedded chat widget in Sphinx/GitHub Pages.
 - **web_widget/**: small JS widget to embed the documentation chatbot.
+- **train/**: training and fine-tuning assets (configs, scripts, job launchers, notebooks).
 - **dev/**: internal documentation, ADRs and design notes.
 - **tests/**: smoke tests and, later, unit/integration tests.
 

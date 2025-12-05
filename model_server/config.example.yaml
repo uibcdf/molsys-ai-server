@@ -2,7 +2,17 @@
 # Example configuration for the MolSys-AI model server (MVP)
 
 model:
-  backend: "llama_cpp"        # or "vllm" in the future
+  # Backend options:
+  # - "stub"      -> echo behaviour (no real model loaded)
+  # - "llama_cpp" -> use llama-cpp-python with a local GGUF file
+  backend: "stub"
+
+  # Optional metadata about the model on Hugging Face Hub.
   hub_id: "uibcdf/molsys-ai-qwen2p5-7b-proto"  # placeholder
   revision: "main"
+
+  # Device/hardware hints for future backends (not used by the stub backend).
   device: "cuda:0"
+
+  # When using backend: "llama_cpp", you must set a local path to the GGUF file:
+  # local_path: "/path/to/molsys-ai-qwen2p5-7b-proto.gguf"

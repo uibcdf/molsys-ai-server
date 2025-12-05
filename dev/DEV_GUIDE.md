@@ -6,7 +6,7 @@ and what to run first once the repository is cloned.
 
 ## 1. Python version
 
-- Recommended: **Python 3.11**
+- Recommended: **Python 3.12**
 - Minimum: **Python 3.10**
 
 Check your version:
@@ -21,7 +21,43 @@ or, depending on your system:
 python3 --version
 ```
 
-## 2. Create and activate a virtual environment
+## 2. Create and activate a development environment
+
+You can use either a pre-defined conda/mamba environment (recommended) or a manual environment.
+
+### Option A – conda/mamba with `environment.yml` (recommended)
+
+From the root of the repository:
+
+```bash
+mamba env create -f environment.yml
+mamba activate molsys-ai
+```
+
+or, if you use `conda`:
+
+```bash
+conda env create -f environment.yml
+conda activate molsys-ai
+```
+
+This environment includes:
+- Python 3.12,
+- the MolSys* ecosystem tools from the `uibcdf` channel,
+- and the core Python tooling used by MolSys-AI.
+
+### Option B – manual environment (`conda` or `venv`)
+
+If you prefer to build the environment manually, you can:
+
+- Use `conda`/`mamba`:
+
+  ```bash
+  conda create -n molsys-ai python=3.12
+  conda activate molsys-ai
+  ```
+
+- Or use a standard `venv`:
 
 From the root of the repository:
 
@@ -31,9 +67,11 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate  # Windows (PowerShell/CMD)
 ```
 
-You should see `(.venv)` in your shell prompt after activation.
+You should see the environment name (e.g. `(.venv)` or `(molsys-ai)`) in your shell prompt after activation.
 
 ## 3. Install development dependencies
+
+With your environment active, install the Python tooling dependencies.
 
 Assuming you have `requirements-dev.txt` in the repo root:
 
@@ -49,7 +87,18 @@ This will install:
 - ruff
 - mypy (optional type checking)
 
-## 4. Run the smoke tests
+## 4. (Optional) Install MolSys* ecosystem tools via conda (manual environments only)
+
+If you created the environment manually (Option B) and plan to develop or test tools that call the MolSys* libraries,  
+you can install them from the laboratory’s `uibcdf` conda channel:
+
+```bash
+conda install -c uibcdf molsysmt molsysviewer topomt elastnet pharmacophoremt
+```
+
+You can select only the subset you actually need. These libraries are already included if you created the environment from `environment.yml`.
+
+## 5. Run the smoke tests
 
 To verify that the basic skeleton imports correctly:
 
@@ -59,9 +108,21 @@ pytest
 
 You should see all tests passing.
 
-## 5. Run the model server (MVP stub)
+## 6. Run the model server
 
-Launch the FastAPI model server (for the MVP it just echoes messages):
+### 6.1 Stub backend (default)
+
+If you have **no** `model_server/config.yaml`, or if it contains:
+
+```yaml
+model:
+  backend: "stub"
+```
+
+the server will run in stub mode (echoing the last user message) and **no**
+model weights will be loaded.
+
+Launch the FastAPI model server:
 
 ```bash
 uvicorn model_server.server:app --reload
@@ -73,26 +134,45 @@ You can inspect the OpenAPI docs at:
 
 - http://127.0.0.1:8000/docs
 
-In the MVP, the `/v1/chat` endpoint returns a stubbed reply.
+In this mode, the `/v1/chat` endpoint returns a stubbed reply.
 
-## 6. Try the CLI
+### 6.2 Llama.cpp backend (outline)
+
+To use a real model via `llama_cpp-python`:
+
+1. Ensure `llama_cpp-python` is installed in your environment.
+2. Download a GGUF model file (e.g. converted from `uibcdf/molsys-ai-qwen2p5-7b-proto`).
+3. Create `model_server/config.yaml` based on `model_server/config.example.yaml`, for example:
+
+   ```yaml
+   model:
+     backend: "llama_cpp"
+     local_path: "/path/to/molsys-ai-qwen2p5-7b-proto.gguf"
+     device: "cuda:0"
+   ```
+
+4. Start the server as above. The server will attempt to load the GGUF file and
+   use it to answer `/v1/chat` requests.
+
+## 7. Try the CLI
 
 With the virtual environment active:
 
 ```bash
-python -m cli.main
+python -m cli.main --message "Hello from MolSys-AI"
 ```
 
-For now this should print a simple message like:
+For now this should print a simple message from the stub model client. You can
+also point the CLI to a running model server:
 
 ```text
-[MolSys-AI] CLI skeleton is in place. Agent wiring will come next.
+molsys-ai --server-url http://127.0.0.1:8000 --message "Hello from MolSys-AI"
 ```
 
-Once the agent and model server are wired, this CLI will be extended
-to open an interactive chat with the agent.
+As the agent and model server evolve, this CLI will be extended to support
+more commands and interactive sessions.
 
-## 7. Code style and tooling
+## 8. Code style and tooling
 
 - Linting and formatting: `ruff`
 - Testing: `pytest`
@@ -108,7 +188,7 @@ mypy agent model_server rag
 
 These commands are not yet enforced by CI, but are recommended during development.
 
-## 8. Where to start hacking
+## 9. Where to start hacking
 
 Suggested starting points for development:
 
@@ -136,14 +216,13 @@ For a conceptual overview, read:
 - `dev/CONSTRAINTS.md`
 - ADRs in `dev/decisions/`
 
-## 9. Language conventions
+## 10. Language conventions
 
-- Code, module names and comments: **English**.
-- Internal docs in `dev/` may mix English/Spanish, but external/public
-  user-facing docs should be consistent and preferably in English, unless
-  otherwise decided.
+- All text in this repository must be written in **English**.
+- This includes source code, comments, documentation, Markdown files (including `dev/`), and configuration files.
+- Existing non-English fragments should be translated to English; new contributions in other languages should not be added.
 
-## 10. Questions and open points
+## 11. Questions and open points
 
 See `dev/OPEN_QUESTIONS.md` for items that are intentionally left open
 for discussion (embedding model choice, backend refinements, etc.).

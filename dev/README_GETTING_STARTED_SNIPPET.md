@@ -42,3 +42,5 @@ You can find more detailed information in:
 - `dev/ROADMAP.md`
 - `dev/CONSTRAINTS.md`
 - `dev/decisions/` (ADRs)
+
+All development documentation and code in this repository must be written in **English** (see `dev/DEV_GUIDE.md`, language conventions).

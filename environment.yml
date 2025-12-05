@@ -1,0 +1,25 @@
+name: molsys-ai
+channels:
+  - uibcdf
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  # MolSys* ecosystem tools (from the laboratory channel)
+  - molsysmt
+  - molsysviewer
+  - topomt
+  - elastnet
+  - pharmacophoremt
+  # Core Python tooling and libraries used by this repository
+  - fastapi
+  - uvicorn
+  - pydantic
+  - rich
+  - requests
+  - pytest
+  - ruff
+  - mypy
+  - sphinx
+  - pydata-sphinx-theme
+  - pip

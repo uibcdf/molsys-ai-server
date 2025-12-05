@@ -5,3 +5,7 @@ rich
 pytest
 ruff
 mypy
+requests
+Sphinx
+pydata-sphinx-theme
+PyYAML

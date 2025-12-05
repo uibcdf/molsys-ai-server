@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "molsys-ai"
+version = "0.1.0"
+description = "MolSys-AI: an AI assistant for the UIBCDF MolSys* ecosystem."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "UIBCDF" }
+]
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "rich",
+  "requests",
+  "PyYAML",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "mypy",
+  "sphinx",
+  "pydata-sphinx-theme",
+]
+
+[project.scripts]
+molsys-ai = "cli.main:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "agent",
+  "agent.*",
+  "cli",
+  "model_server",
+  "rag",
+  "docs_chat",
+]

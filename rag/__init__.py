@@ -1,1 +1,2 @@
-"""RAG (Retrieval-Augmented Generation) layer for MolSys-AI."""
+"""MolSys-AI retrieval-augmented generation (RAG) layer."""
+

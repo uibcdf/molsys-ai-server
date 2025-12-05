@@ -10,19 +10,20 @@ This directory contains the core logic of the MolSys-AI agent.
   - Responsible for orchestrating:
     - user messages,
     - calls to the language model (via a `ModelClient`),
-    - (later) planning and tool execution.
+    - basic planning and (later) tool execution.
 
 - `planner.py`:
-  - Will implement high-level planning:
-    - analyse the user goal,
-    - decide whether to call tools or answer directly,
-    - decompose complex tasks into steps.
+  - Implements a very simple planner that:
+    - analyses the last user message,
+    - decides whether to use RAG (documentation context),
+    - builds the messages that should be sent to the model.
+  - This is an MVP interface that can grow into more advanced planning.
 
 - `executor.py`:
-  - Will execute tools:
-    - map tool names to Python callables,
-    - validate inputs/outputs,
-    - enforce safety constraints (see ADR-010).
+  - Implements a minimal tool executor:
+    - maps tool names to Python callables,
+    - provides a basic registry and `execute()` method.
+  - A default executor is created with a dummy MolSysMT tool used for wiring tests.
 
 - `tools/`:
   - Houses tool wrappers around:
