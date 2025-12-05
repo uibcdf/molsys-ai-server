@@ -1,0 +1,8 @@
+
+# Example configuration for the MolSys-AI model server (MVP)
+
+model:
+  backend: "llama_cpp"        # or "vllm" in the future
+  hub_id: "uibcdf/molsys-ai-qwen2p5-7b-proto"  # placeholder
+  revision: "main"
+  device: "cuda:0"
