@@ -43,13 +43,15 @@ Open point:
 - Exact interface of the `ModelClient` abstraction that will allow us
   to swap llama.cpp, vLLM or other backends without changing the agent.
 
-## 5. Level of autonomy of the agent
+## 5. Agent Planner Evolution Strategy
 
-- Planner/executor design is still high-level.
-- We need to refine:
-  - how many reasoning/tool-calling iterations per request,
-  - how to limit cost/latency,
-  - how to log and audit tool usage.
+The design of the agent's planner, which was previously a high-level open question, has been decided with a two-phase strategy:
+
+- **Phase 1 (MVP):** The project will proceed with the current `SimplePlanner`. This heuristic-based planner (using keywords and regular expressions) is fast, cost-effective, and reliable for well-defined tasks. Its main purpose is to enable the development and validation of the full end-to-end agent workflow (tool execution, RAG integration, response generation).
+
+- **Phase 2 (Post-MVP):** Once the core agent mechanics are proven stable, the `SimplePlanner` will be evolved into an advanced, LLM-based planner. This upgrade is critical for enabling flexible, natural language-based tool selection and, most importantly, the multi-step reasoning required for true agent autonomy.
+
+The specifics of the LLM-based planner (e.g., ReAct, CoT), cost/latency limits, and auditing will be defined as part of the Phase 2 implementation.
 
 ## 6. First concrete MolSysMT/TopoMT tools
 
