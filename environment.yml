@@ -22,4 +22,7 @@ dependencies:
   - mypy
   - sphinx
   - pydata-sphinx-theme
+  - numpy
   - pip
+  - pip:
+    - sentence-transformers

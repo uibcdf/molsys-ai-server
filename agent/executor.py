@@ -61,12 +61,12 @@ class ToolExecutor:
 def create_default_executor() -> ToolExecutor:
     """Create a tool executor with the default tool set registered."""
 
-    from .tools.molsysmt_tools import tool_dummy_molsysmt_info
+    from .tools.molsysmt_tools import get_info
 
     executor = ToolExecutor()
     executor.register(
-        name="molsysmt.dummy_info",
-        func=tool_dummy_molsysmt_info,
-        description="Return a dummy info string about MolSysMT (wiring test).",
+        name="molsysmt.get_info",
+        func=get_info,
+        description="Load a molecular system from a PDB ID and get basic information.",
     )
     return executor

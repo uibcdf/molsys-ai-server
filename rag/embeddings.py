@@ -1,39 +1,27 @@
 
-"""Embedding model wrapper for MolSys-AI RAG.
-
-The implementation will be decided later (e.g. a small HF model on GPU).
-This module should hide those details from the rest of the codebase.
-"""
+"""Embedding model wrapper for MolSys-AI RAG."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from functools import lru_cache
 from typing import List
 
+from sentence_transformers import SentenceTransformer
 
-class EmbeddingModel(ABC):
-    """Abstract interface for text embedding models."""
 
-    @abstractmethod
+class SentenceTransformerEmbeddingModel:
+    """Embedding model based on a sentence-transformers model."""
+
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        self.model = SentenceTransformer(model_name)
+
     def embed(self, texts: List[str]) -> List[List[float]]:
         """Embed a list of texts into vectors."""
+        embeddings = self.model.encode(texts, convert_to_numpy=True)
+        return embeddings.tolist()
 
 
-class DummyEmbeddingModel(EmbeddingModel):
-    """Placeholder embedding model.
-
-    It returns zero vectors and is only meant for testing wiring and
-    prototyping the RAG API.
-    """
-
-    def embed(self, texts: List[str]) -> List[List[float]]:
-        return [[0.0] for _ in texts]
-
-
-def get_default_embedding_model() -> EmbeddingModel:
-    """Return the default embedding model instance.
-
-    In the MVP this is a dummy implementation; later this will return a
-    real model configured according to project settings and ADRs.
-    """
-    return DummyEmbeddingModel()
+@lru_cache()
+def get_default_embedding_model() -> SentenceTransformerEmbeddingModel:
+    """Return the default embedding model instance."""
+    return SentenceTransformerEmbeddingModel()

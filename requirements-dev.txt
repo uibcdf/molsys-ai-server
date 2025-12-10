@@ -6,6 +6,7 @@ pytest
 ruff
 mypy
 requests
-Sphinx
+sphinx
 pydata-sphinx-theme
-PyYAML
+pyyaml
+starlette

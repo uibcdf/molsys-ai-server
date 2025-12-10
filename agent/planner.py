@@ -13,10 +13,12 @@ capable planner with multi-step reasoning and tool selection.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from rag.retriever import Document, retrieve
+from rag.retriever import Document, load_index, retrieve
 
 
 @dataclass
@@ -28,12 +30,17 @@ class Plan:
     use_rag:
         Whether the planner decided to include RAG context in the model call.
     use_tools:
-        Whether the planner decided that tools should be invoked (not used in
-        the MVP implementation yet).
+        Whether the planner decided that tools should be invoked.
+    tool_name:
+        The name of the tool to be invoked.
+    tool_args:
+        The arguments to be passed to the tool.
     """
 
     use_rag: bool = False
     use_tools: bool = False
+    tool_name: Optional[str] = None
+    tool_args: Optional[Dict[str, Any]] = None
 
 
 class SimplePlanner:
@@ -47,28 +54,41 @@ class SimplePlanner:
       for them.
     """
 
+    def __init__(self, index_path: Path = Path("data/rag_index.pkl")):
+        self.index = load_index(index_path)
+
     def decide(self, messages: List[Dict[str, str]], force_rag: bool = False) -> Plan:
         """Return a simple plan given the current conversation."""
 
         if not messages:
-            return Plan(use_rag=False, use_tools=False)
+            return Plan()
 
         last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
         if last_user is None:
-            return Plan(use_rag=False, use_tools=False)
+            return Plan()
 
         content = last_user.get("content", "")
 
         if force_rag:
-            return Plan(use_rag=True, use_tools=False)
+            return Plan(use_rag=True)
+
+        # Heuristic 2: check for PDB ID and use the tool.
+        match = re.search(r"\b([0-9][a-zA-Z0-9]{3})\b", content)
+        if match:
+            pdb_id = match.group(1)
+            return Plan(
+                use_tools=True,
+                tool_name="molsysmt.get_info",
+                tool_args={"pdb_id": pdb_id},
+            )
 
         # Very naive heuristic: treat "what is", "how to" questions as
         # documentation-style and prefer RAG.
         lowered = content.lower()
         if lowered.startswith("what is ") or lowered.startswith("how to ") or "docs" in lowered:
-            return Plan(use_rag=True, use_tools=False)
+            return Plan(use_rag=True)
 
-        return Plan(use_rag=False, use_tools=False)
+        return Plan()
 
     def build_model_messages(
         self,
@@ -94,7 +114,7 @@ class SimplePlanner:
             return messages
 
         query = last_user.get("content", "")
-        docs = retrieve(query, k=rag_k)
+        docs = retrieve(query, self.index, k=rag_k)
 
         context_lines: List[str] = []
         for i, doc in enumerate(docs, start=1):

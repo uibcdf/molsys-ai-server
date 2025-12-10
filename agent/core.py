@@ -55,5 +55,18 @@ class MolSysAIAgent:
         """
 
         plan: Plan = self.planner.decide(messages, force_rag=force_rag)
+
+        if plan.use_tools:
+            tool_name = plan.tool_name or ""
+            tool_args = plan.tool_args or {}
+            try:
+                tool_output = self.executor.execute(tool_name, **tool_args)
+            except Exception as e:
+                tool_output = f"Error executing tool {tool_name}: {e}"
+
+            tool_message = {"role": "tool", "content": tool_output}
+            messages.append(tool_message)
+            return self.model_client.generate(messages)
+
         planned_messages = self.planner.build_model_messages(messages, plan)
         return self.model_client.generate(planned_messages)
