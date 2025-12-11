@@ -37,13 +37,20 @@ Hemos completado la fase inicial de configuración y la implementación de la pr
 - **`rag/retriever.py`:** Se implementó la lógica de búsqueda vectorial (similitud de coseno) para encontrar los documentos más relevantes para una consulta dada.
 - **Integración:** Se actualizaron `agent/planner.py` y `docs_chat/backend.py` para ser compatibles con la nueva lógica de carga y consulta del índice RAG.
 
+### Fase 4: Construcción del Índice RAG y Ajuste del Entorno
+
+- **Propósito:** Generar el índice vectorial para el sistema RAG y asegurar que el entorno de ejecución sea estable.
+- **`_build_index_script.py`:** Se creó y ejecutó con éxito el script para procesar la documentación de `../molsysmt`.
+- **Índice RAG:** Se generó y guardó el índice en `data/rag_index.pkl`, conteniendo 1227 fragmentos de texto con sus correspondientes embeddings.
+- **Ajuste del Entorno:** Se identificó y resolvió un conflicto de dependencias entre `pyarrow` y `datasets`. Se fijó la versión `datasets=4.4.1` en `environment.yml` para garantizar la reproducibilidad del entorno.
+
 ## 3. Plan General (A dónde vamos)
 
 La estrategia acordada es centrarse en la **implementación completa del sistema RAG** como el siguiente gran paso, ya que es fundamental para los tres objetivos globales.
 
 El flujo de trabajo RAG que estamos construyendo es:
 
-1.  **Indexación (fuera de línea):** Leer toda la documentación de MolSysMT, dividirla en fragmentos, calcular sus embeddings y guardar todo en un índice persistente.
+1.  **Indexación (fuera de línea):** Leer toda la documentación de MolSysMT, dividirla en fragmentos, calcular sus embeddings y guardar todo en un índice persistente. **(Completado)**
 2.  **Consulta (en tiempo real):** Cuando un usuario hace una pregunta, el sistema calcula el embedding de la pregunta, busca en el índice los fragmentos de texto más similares y los recupera.
 3.  **Generación de Respuesta:** El agente o chatbot recibe la pregunta original junto con el contexto recuperado ("documentación relevante") y utiliza esta información para generar una respuesta precisa y fundamentada.
 
@@ -51,13 +58,34 @@ Este sistema será el núcleo del chatbot de documentación y una fuente de dato
 
 ## 4. Siguientes Pasos Inmediatos
 
-La sesión actual se detuvo justo antes de ejecutar el script para construir el índice RAG. Los siguientes pasos a realizar en la nueva máquina (servidor de 3 GPUs) son:
+Hemos completado con éxito la construcción del índice RAG y ajustado el entorno. El siguiente paso es verificar que el sistema funciona de extremo a extremo.
 
-1.  **Configurar el Entorno Conda:** La nueva máquina necesitará el entorno `conda` con todas las dependencias. Dado que hemos actualizado `environment.yml`, el comando a ejecutar será similar a `conda env update --file environment.yml --name molsys-ai` o `conda env create -f environment.yml` si el entorno no existe.
-2.  **Construir el Índice RAG:**
-    - Ejecutar el script `_build_index_script.py` que hemos creado para este propósito:
-      ```bash
-      python _build_index_script.py
-      ```
-    - **Nota:** La primera vez, este comando descargará el modelo de `sentence-transformers` (aprox. 90MB). Luego, procesará toda la documentación de `../molsysmt` para generar los embeddings. Este proceso **hará uso de la GPU** si está disponible, y puede tardar varios minutos. El resultado será el archivo `data/rag_index.pkl`.
-3.  **Probar el Sistema RAG:** Una vez que el índice `data/rag_index.pkl` exista, el siguiente paso es probar que el agente puede usarlo. Esto se puede hacer ejecutando la aplicación `docs_chat` o escribiendo una prueba unitaria que llame a `retrieve` y verifique los resultados.
+1.  **Probar el Sistema RAG (Ejecución de Servidores y Consulta):**
+    Para una prueba completa del sistema RAG, necesitamos dos servidores Uvicorn corriendo simultáneamente en dos terminales separadas:
+
+    *   **Terminal 1 (Servidor del Modelo - Puerto 8000):**
+        Inicia el servidor del modelo. Este componente actúa como el "cerebro" del chatbot, al que el backend de `docs_chat` enviará las preguntas.
+        ```bash
+        uvicorn model_server.server:app --reload
+        ```
+        (Asegúrate de que esta terminal muestre "Application startup complete" y no la cierres).
+
+    *   **Terminal 2 (Backend de Chat de Documentación - Puerto 8001):**
+        Inicia el backend del chat de documentación. Este componente utiliza el índice RAG que acabamos de construir y se comunica con el servidor del modelo. Es crucial especificar la variable de entorno `MOLSYS_AI_DOCS_INDEX` para que cargue el índice correcto, y usar un puerto diferente para evitar conflictos.
+        ```bash
+        MOLSYS_AI_DOCS_INDEX=data/rag_index.pkl uvicorn docs_chat.backend:app --reload --port 8001
+        ```
+        (Asegúrate de que esta terminal muestre "Index loaded with 1227 documents" y "Application startup complete").
+
+    Una vez que ambos servidores estén corriendo, podemos realizar una consulta de prueba.
+
+2.  **Realizar una Consulta de Prueba (`curl`):**
+    Abre una tercera terminal y ejecuta el siguiente comando `curl` para enviar una pregunta al backend de chat de documentación. Este comando consultará el índice RAG y enviará la consulta al servidor del modelo.
+    ```bash
+    curl -X POST http://127.0.0.1:8001/v1/docs-chat \
+         -H "Content-Type: application/json" \
+         -d '{"query": "How to load a PDB ID in MolSysMT?", "k": 3}'
+    ```
+    La respuesta de este comando `curl` nos indicará si el sistema RAG y la integración con el modelo funcionan correctamente.
+
+3.  **Limpiar el repositorio:** Eliminar el script temporal `_build_index_script.py`. (Ya realizado)
