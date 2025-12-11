@@ -24,5 +24,6 @@ dependencies:
   - pydata-sphinx-theme
   - numpy
   - pip
+  - datasets=4.4.1
   - pip:
     - sentence-transformers
