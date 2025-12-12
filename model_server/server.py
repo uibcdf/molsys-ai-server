@@ -88,7 +88,7 @@ class LlamaCppBackend(ModelBackend):
 
         # Minimal Llama initialisation; additional parameters can be added
         # later according to hardware and performance needs.
-        self._llama = Llama(model_path=str(local_path))
+        self._llama = Llama(model_path=str(local_path), n_gpu_layers=-1, verbose=True)
 
     def chat(self, messages: List[Message]) -> str:
         # Very simple prompt formatting for the MVP.

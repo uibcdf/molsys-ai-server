@@ -73,3 +73,4 @@ _build_index_script.py
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+/models/

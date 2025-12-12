@@ -66,7 +66,7 @@ class HTTPModelClient(ModelClient):
         payload = {"messages": messages}
 
         try:
-            response = requests.post(url, json=payload, timeout=30)
+            response = requests.post(url, json=payload, timeout=300)
             response.raise_for_status()
         except requests.RequestException as exc:  # pragma: no cover - network
             raise RuntimeError(f"Failed to call model server at {url}") from exc

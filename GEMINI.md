@@ -1,75 +1,105 @@
-# Guía para el Asistente Gemini
+# Guide for the Gemini Assistant
 
-Este documento proporciona un contexto rápido y una guía de operaciones para trabajar eficientemente en el repositorio `molsys-ai`.
+This document provides a quick context and operational guide for working efficiently in the `molsys-ai` repository.
 
-## 1. Resumen del Proyecto
+## 1. Project Summary
 
-**Objetivo:** Construir un asistente de IA para el ecosistema de herramientas de simulación molecular `MolSys*` (MolSysMT, MolSysViewer, etc.).
+**Objective:** To build an AI assistant for the `MolSys*` ecosystem of molecular simulation tools (MolSysMT, MolSysViewer, etc.).
 
-**Componentes Clave:**
-1.  **Agente Autónomo CLI:** Un agente que utiliza las herramientas de MolSysSuite para realizar flujos de trabajo.
-2.  **Chatbot de Documentación:** Un chatbot basado en RAG para responder preguntas sobre el uso de las herramientas, integrable en la documentación web.
-3.  **Modelo de Lenguaje Re-entrenado:** Un LLM especializado en el conocimiento del ecosistema MolSys*.
+**Key Components:**
+1.  **Autonomous CLI Agent:** An agent that uses the MolSysSuite tools to perform workflows.
+2.  **Documentation Chatbot:** A RAG-based chatbot to answer questions about using the tools, integrable into the web documentation.
+3.  **Retrained Language Model:** An LLM specialized in the knowledge of the MolSys* ecosystem.
 
-## 2. Entorno de Desarrollo
+## 2. Development Environment
 
-**¡IMPORTANTE!** El entorno de trabajo se gestiona exclusivamente con **Conda** a través del archivo `environment.yml`.
+**IMPORTANT!** The working environment is managed exclusively with **Conda/Mamba** through the `environment.yml` file.
 
-- **Dependencias Críticas:** Herramientas como `molsysmt` **no están en PyPI**. Se distribuyen a través del canal `uibcdf` de Conda, que ya está configurado en `environment.yml`.
-- **Instalación/Actualización:** Para configurar el entorno, utiliza:
+- **Preference for Micromamba:** The use of `micromamba` is preferred over `conda` for its greater speed and efficiency.
+
+- **Conda Channels:** The channel priority is:
+  1.  `uibcdf`: For the MolSys* ecosystem tools.
+  2.  `conda-forge`: For most dependencies, aiming for stability.
+  3.  `defaults`: As a last resort.
+
+- **Local Dependencies (Under Development):** The tools `molsysmt`, `molsysviewer`, `topomt`, `elastnet`, and `pharmacophoremt` are installed manually from their local repositories. For this reason, they **must remain commented out** in the `environment.yml` file to avoid overwriting the development versions with the stable ones from the Conda channels.
+
+- **Installation and Updates:** To set up or update the environment, use `micromamba` or `conda`. Ensure that the `environment.yml` file **does not contain the `name` field** so that the active environment is updated. To avoid terminal blocking, it is recommended to use the `-y` flag.
   ```bash
-  # Si el entorno no existe
-  conda env create -f environment.yml
+  # With micromamba (preferred)
+  micromamba env update -f environment.yml -y
 
-  # Si el entorno ya existe y quieres actualizarlo
-  conda env update --file environment.yml --name molsys-ai
+  # With conda
+  conda env update --file environment.yml -y
   ```
-- **Modo Editable:** Para que los comandos como `molsys-ai` estén disponibles, el paquete debe instalarse en modo editable. Después de activar el entorno, ejecuta:
+
+- **Editable Mode:** To make commands like `molsys-ai` available, the package must be installed in editable mode. After activating the environment, run:
   ```bash
   pip install -e .
   ```
 
-## 3. Comandos de Ejecución Clave
+### 2.1. Running Servers in the Background
 
-- **Servidor del Modelo (Stub):**
+To run servers like `uvicorn` without blocking the terminal, the `nohup` command must be used. This ensures that the process continues to run even if the terminal session is closed and redirects all output to a log file.
+
+- **Example Usage:**
+  ```bash
+  # Runs the server in the background and saves its log to 'server.log'
+  nohup uvicorn model_server.server:app --reload > server.log 2>&1 &
+  ```
+- **To stop the server:**
+  The `nohup` command returns a PID. To stop the server, the `kill` command must be used with the PGID (Process Group ID) provided by the `run_shell_command` tool to ensure that all child processes also terminate.
+
+### 2.2. Compiling `llama-cpp-python` with GPU (CPU Fallback)
+
+Compiling `llama-cpp-python` with GPU support (CUDA acceleration) is complex and sensitive to the environment configuration (version of `gcc`, `nvcc`, `cudatoolkit`, etc.). During development, we encountered multiple compilation problems that were irresolvable in an automated way.
+
+- **Current Status:** To unblock development, the project operates with a **CPU-only** version of `llama-cpp-python` installed from `conda-forge`. This allows the RAG system to be functional, although model inference is slower.
+- **Long-Term Solution:** To enable GPU support, the robust solution is to install the **full NVIDIA CUDA Toolkit at the system level** (not via `conda`) and force the compilation of `llama-cpp-python` to use that installation. This requires manual system configuration and is outside the scope of automated environment management.
+
+Any attempt to reinstall `llama-cpp-python` with GPU support must take this complexity into account.
+
+## 3. Key Execution Commands
+
+- **Model Server (Stub):**
   ```bash
   uvicorn model_server.server:app --reload
   ```
-- **CLI (apuntando al servidor):**
+- **CLI (pointing to the server):**
   ```bash
-  molsys-ai --server-url http://127.0.0.1:8000 --message "Tu pregunta"
+  molsys-ai --server-url http://127.0.0.1:8000 --message "Your question"
   ```
-- **Backend del Chat de Documentación:**
+- **Documentation Chat Backend:**
   ```bash
   uvicorn docs_chat.backend:app --reload
   ```
 
-## 4. Pruebas (Testing)
+## 4. Testing
 
-- **Ejecutar Pruebas:**
+- **Run Tests:**
   ```bash
   pytest
   ```
-- **Convención para Mocks:** Para evitar el error `ModuleNotFoundError: No module named 'molsysmt'`, cualquier prueba que directa o indirectamente importe `molsysmt` debe simular (mock) el módulo. La convención establecida en este proyecto es parchear `sys.modules`. **Observa `tests/test_smoke.py` como ejemplo de referencia**:
+- **Convention for Mocks:** To avoid the `ModuleNotFoundError: No module named 'molsysmt'`, any test that directly or indirectly imports `molsysmt` must mock the module. The convention established in this project is to patch `sys.modules`. **See `tests/test_smoke.py` as a reference example**:
   ```python
-  # Al principio de la función de prueba
+  # At the beginning of the test function
   mocker.patch.dict("sys.modules", {"molsysmt": mocker.Mock()})
 
-  # Importa los módulos que dependen de molsysmt DESPUÉS del parche
+  # Import the modules that depend on molsysmt AFTER the patch
   from agent.core import MolSysAIAgent
   ```
 
-## 5. Sistema RAG (Retrieval-Augmented Generation)
+## 5. RAG System (Retrieval-Augmented Generation)
 
-- **Propósito:** Es el motor de búsqueda de conocimiento para el chatbot. Se basa en encontrar fragmentos de documentación relevantes para una pregunta.
-- **Fuente de Datos:** La documentación del repositorio `molsysmt`, que se asume que está en `../molsysmt/`.
-- **Índice:** El proceso de RAG genera un índice (`data/rag_index.pkl`) que contiene los textos y sus embeddings vectoriales.
-- **Construcción del Índice:** Para generar o actualizar el índice, se debe ejecutar un script que llame a `rag.build_index.build_index()`. El script temporal `_build_index_script.py` se creó para este fin:
+- **Purpose:** It is the knowledge search engine for the chatbot. It is based on finding relevant documentation snippets for a question.
+- **Data Source:** The documentation from the `molsysmt` repository, which is assumed to be in `../molsysmt/`.
+- **Index:** The RAG process generates an index (`data/rag_index.pkl`) that contains the texts and their vector embeddings.
+- **Index Construction:** To generate or update the index, a script must be run that calls `rag.build_index.build_index()`. The temporary script `_build_index_script.py` was created for this purpose:
   ```bash
   python _build_index_script.py
   ```
-  **Nota:** La primera vez, este comando descarga un modelo de `sentence-transformers` y luego procesa la documentación. Puede tardar varios minutos y utilizará la GPU si está disponible.
+  **Note:** The first time, this command downloads a model from `sentence-transformers` and then processes the documentation. It may take several minutes and will use the GPU if available.
 
-## 6. Estado Actual y Siguientes Pasos
+## 6. Current Status and Next Steps
 
-Para conocer el estado exacto en el que se dejó el proyecto y cuáles son los siguientes pasos inmediatos, **consulta siempre el archivo `checkpoint.md`**. Este archivo se actualiza al final de cada sesión de trabajo para garantizar una transición fluida.
+To know the exact state in which the project was left and what the immediate next steps are, **always consult the `checkpoint.md` file**. This file is updated at the end of each work session to ensure a smooth transition.
