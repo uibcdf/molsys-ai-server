@@ -19,14 +19,18 @@ dependencies = [
   "rich",
   "requests",
   "PyYAML",
+  "numpy",
+  "sentence-transformers",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-mock",
   "ruff",
   "mypy",
   "sphinx",
+  "myst-parser",
   "pydata-sphinx-theme",
 ]
 

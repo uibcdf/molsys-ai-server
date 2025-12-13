@@ -12,7 +12,7 @@
 2. **Install development dependencies**:
 
    ```bash
-   pip install -r requirements-dev.txt
+   pip install -e ".[dev]"
    ```
 
 3. **Run the smoke tests**:
@@ -38,6 +38,7 @@
 You can find more detailed information in:
 
 - `dev/DEV_GUIDE.md`
+- `dev/RUNBOOK_VLLM.md` (vLLM + CUDA 12.9 runbook)
 - `dev/ARCHITECTURE.md`
 - `dev/ROADMAP.md`
 - `dev/CONSTRAINTS.md`

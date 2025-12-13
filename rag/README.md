@@ -38,35 +38,35 @@ The goal is to allow the agent to:
 
 ## Index location
 
-- The FAISS index will likely be stored on disk under a directory
-  such as `rag/index/` (or a similar path).
-- The exact location and naming will be configurable later. For now, the
-  in-memory index used by `rag.retriever` is populated at runtime.
+- The current MVP stores a pickled list of `Document` objects on disk
+  (default: `data/rag_index.pkl`).
+- A FAISS-based index is planned (see ADR-004), but not implemented yet.
 
 ## MVP behaviour and quickstart
 
 - `build_index.build_index(source_dir, index_path)` (MVP implementation):
-  - Reads `*.txt` files under `source_dir`.
-  - Creates `Document` objects with `content` and a simple `{"path": ...}` metadata.
-  - Stores them in an in-memory index via `rag.retriever.set_index`.
-  - The `index_path` argument is reserved for future FAISS persistence.
+  - Reads `*.md` files under `source_dir`.
+  - Splits content into small chunks (currently by paragraph).
+  - Embeds chunks using a sentence-transformers model
+    (see `rag/embeddings.py`, default: `all-MiniLM-L6-v2`).
+  - Stores the resulting `Document` list (including embeddings) as a pickle
+    file at `index_path`.
 
 - `retriever.retrieve(query, k=5)`:
-  - Performs a very simple scoring based on case-insensitive substring
-    matches of `query` in each document’s content.
-  - Returns up to `k` documents ordered by this score.
+  - Embeds the query using the same embedding model.
+  - Scores documents by cosine similarity against stored embeddings.
+  - Returns up to `k` documents ordered by similarity.
 
 - The `docs_chat` backend (`docs_chat/backend.py`) calls `build_index(...)`
   automatically on startup:
-  - By default it looks for `.txt` files under `docs_chat/data/docs`.
+  - By default it looks for `.md` files under `docs_chat/data/docs`.
   - You can override the source directory with the environment variable
     `MOLSYS_AI_DOCS_DIR`.
-  - The environment variable `MOLSYS_AI_DOCS_INDEX` is reserved for the
-    future FAISS-based index path and is currently unused.
+  - `MOLSYS_AI_DOCS_INDEX` controls where the pickled index is stored.
 
 To experiment quickly:
 
-1. Place a few `.txt` documents under `docs_chat/data/docs` (or set
+1. Place a few `.md` documents under `docs_chat/data/docs` (or set
    `MOLSYS_AI_DOCS_DIR` to another directory).
 2. Run the docs-chat backend, e.g.:
 
@@ -86,7 +86,7 @@ To experiment quickly:
    ```
 
 The docs-chat backend will:
-- build an in-memory index from the `.txt` documents,
+- build an embedding index from the `.md` documents,
 - retrieve simple matches for the query via `rag.retriever.retrieve`,
 - send a prompt with the retrieved excerpts to the configured model server,
 - and return the model's reply.

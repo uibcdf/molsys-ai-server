@@ -36,12 +36,18 @@ Questions:
 
 ## 4. Backend model evolution
 
-- MVP: llama.cpp (see ADR-003).
-- Future: vLLM when hardware is upgraded.
+- Current baseline: vLLM (see ADR-015).
+- Legacy: llama.cpp (see ADR-003/014).
 
 Open point:
-- Exact interface of the `ModelClient` abstraction that will allow us
-  to swap llama.cpp, vLLM or other backends without changing the agent.
+- Exact interface of the `ModelClient` abstraction that will allow swapping
+  vLLM, alternative engines (SGLang/ExLlamaV2), or remote services without
+  changing the agent core.
+
+Related open point:
+- Proper chat formatting: the current MVP server uses the last `user` message
+  as a plain prompt. A real chatbot needs a model-specific chat template and
+  conversation context management (history truncation/summarization).
 
 ## 5. Agent Planner Evolution Strategy
 

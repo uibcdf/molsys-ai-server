@@ -2,6 +2,8 @@
 
 This directory groups together resources and scripts related to **training and fine-tuning**
 models for MolSys-AI (for example, LoRA/QLoRA on top of Qwen2.5-7B).
+models for MolSys-AI (for example, LoRA/QLoRA on top of the current
+foundational model; see ADR-017).
 
 The intent is to keep training logic clearly separated from:
 - the runtime agent (`agent/`),
@@ -42,4 +44,3 @@ In the deployment model described in the ADRs:
 At this stage, the training pipeline is not implemented yet. This skeleton is
 provided to make it easier to add the first QLoRA/LoRA workflows without
 restructuring the repository later.
-

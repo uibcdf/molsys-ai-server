@@ -19,7 +19,7 @@ experiment:
   name: "molsys-ai-qwen2p5-7b-lora-v0"
 
 model:
-  base_hub_id: "Qwen/Qwen2.5-7B-Instruct"
+  base_hub_id: "meta-llama/Llama-3.1-8B-Instruct"
   lora_rank: 64
   lora_alpha: 16
 
@@ -33,4 +33,3 @@ output:
 ```
 
 Real configuration files can be added as the training pipeline is designed.
-

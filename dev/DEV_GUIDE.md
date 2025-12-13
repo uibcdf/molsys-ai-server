@@ -71,15 +71,21 @@ You should see the environment name (e.g. `(.venv)` or `(molsys-ai)`) in your sh
 
 ## 3. Install development dependencies
 
-With your environment active, install the Python tooling dependencies.
+With your environment active, install the project in editable mode.
 
-Assuming you have `requirements-dev.txt` in the repo root:
+Basic (runtime) install:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e .
 ```
 
-This will install:
+Developer extras (lint/test/docs tooling):
+
+```bash
+pip install -e ".[dev]"
+```
+
+This installs:
 
 - fastapi, uvicorn, pydantic
 - rich
@@ -136,23 +142,17 @@ You can inspect the OpenAPI docs at:
 
 In this mode, the `/v1/chat` endpoint returns a stubbed reply.
 
-### 6.2 Llama.cpp backend (outline)
+### 6.2 vLLM backend (current baseline)
 
-To use a real model via `llama_cpp-python`:
+To use a real model via vLLM:
 
-1. Ensure `llama_cpp-python` is installed in your environment.
-2. Download a GGUF model file (e.g. converted from `uibcdf/molsys-ai-qwen2p5-7b-proto`).
-3. Create `model_server/config.yaml` based on `model_server/config.example.yaml`, for example:
+1. Set up the vLLM environment and install a system CUDA Toolkit (`nvcc`).
+2. Download the AWQ model locally (Hugging Face SSH + `git-lfs`).
+3. Create `model_server/config.yaml` based on `model_server/config.example.yaml`.
 
-   ```yaml
-   model:
-     backend: "llama_cpp"
-     local_path: "/path/to/molsys-ai-qwen2p5-7b-proto.gguf"
-     device: "cuda:0"
-   ```
+For the full, validated procedure, see:
 
-4. Start the server as above. The server will attempt to load the GGUF file and
-   use it to answer `/v1/chat` requests.
+- `dev/RUNBOOK_VLLM.md`
 
 ## 7. Try the CLI
 

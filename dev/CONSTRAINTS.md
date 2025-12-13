@@ -9,14 +9,14 @@ This document lists current constraints and assumptions for the initial phase of
   - Node A: has a static IP address, used for **serving** models and APIs.
   - Node B: no static IP address, used for **training** (LoRA/QLoRA) and experimentation.
 - Each node has:
-  - 3 × NVIDIA GTX 1080 Ti GPUs (11 GB VRAM each).
+  - 3 × NVIDIA RTX 2080 Ti GPUs (11 GB VRAM each).
 - The design should:
   - work well on this hardware,
   - allow future migration to larger GPUs without major refactors.
 
 ## Model
 
-- Initial base model: **Qwen2.5-7B-Instruct**.
+- Foundational base model: **Llama-3.1-8B-Instruct** (see ADR-017).
 - Strategy:
   - Phase 1: use the base model with RAG + tools.
   - Phase 2: add LoRA/QLoRA specialization for the MolSys* ecosystem.
@@ -26,9 +26,11 @@ This document lists current constraints and assumptions for the initial phase of
 
 - MVP backend:
   - HTTP API using **FastAPI**.
-  - Model backend: **llama.cpp / llama-cpp-python** as a hardware-friendly option.
-- Future option:
-  - **vLLM** as a more powerful backend when GPUs are upgraded.
+  - Model backend: **vLLM** (see ADR-015).
+  - Quantization format: **AWQ** (see ADR-016).
+- Operational note:
+  - A system CUDA Toolkit is required for `nvcc` so that vLLM can JIT-compile
+    kernels (FlashInfer).
 
 ## RAG
 

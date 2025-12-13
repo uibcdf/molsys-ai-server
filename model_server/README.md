@@ -1,4 +1,3 @@
-
 # MolSys-AI Model Server (MVP)
 
 This directory contains the FastAPI-based model server for MolSys-AI.
@@ -6,8 +5,8 @@ This directory contains the FastAPI-based model server for MolSys-AI.
 For the MVP, the server exposes a `/v1/chat` endpoint and can use:
 
 - a **stub backend** that echoes the last user message (default), or
-- a **llama.cpp backend** (via `llama_cpp-python`) that runs a local GGUF model
-  when configured.
+- a **vLLM backend** that runs a local (or Hub) model, typically an AWQ
+  quantized checkpoint (current baseline).
 
 Configuration is read from a YAML file:
 
@@ -37,30 +36,52 @@ The endpoint will respond with:
 [MolSys-AI stub reply] You said: ...
 ```
 
-## Using a llama.cpp backend (outline)
+## Using the vLLM backend (current baseline)
 
-To use a real model via `llama_cpp-python`:
+The vLLM backend is enabled with:
 
-1. Install `llama_cpp-python` in your environment.
-2. Download the desired GGUF model (e.g. from Hugging Face under `uibcdf/`).
-3. Create `model_server/config.yaml` based on `config.example.yaml`, for example:
+```yaml
+model:
+  backend: "vllm"
+```
 
-   ```yaml
-   model:
-     backend: "llama_cpp"
-     local_path: "/path/to/molsys-ai-qwen2p5-7b-proto.gguf"
-     device: "cuda:0"
-   ```
+For the validated, end-to-end procedure (CUDA 12.9 + `nvcc`, model download via
+Hugging Face SSH + `git-lfs`, and a stable configuration for 11 GB GPUs), see:
 
-4. Start the server:
+- `dev/RUNBOOK_VLLM.md`
 
-   ```bash
-   uvicorn model_server.server:app --reload
-   ```
+### Key configuration fields
 
-The current `llama_cpp` integration is a minimal skeleton intended to be refined
-according to hardware constraints and future ADRs (context window, sampling
-parameters, etc.).
+- `model.local_path`
+  - Local model directory (recommended for production).
+  - A Hugging Face ID may also work, but local is preferred on HPC nodes.
+- `model.quantization`
+  - Use `"awq"` for the current baseline model.
+- `model.tensor_parallel_size`
+  - Use `1` for a single-GPU baseline.
+  - Use `3` to spread the model across `CUDA_VISIBLE_DEVICES=0,1,2` if needed.
+- `model.max_model_len`
+  - Context window limit (tokens). Must be set explicitly on 11 GB GPUs.
+- `model.gpu_memory_utilization`
+  - Fraction of GPU memory vLLM is allowed to use.
+- `model.enforce_eager`
+  - Stability-first toggle. When `true`, vLLM disables `torch.compile` and CUDA
+    graphs, reducing OOM risk during warmup on 11 GB GPUs.
 
-The docs chatbot backend (`docs_chat/backend.py`) will talk to whichever
-backend is configured here via HTTP.
+### Important note (chat formatting)
+
+The current MVP vLLM backend treats the last `user` message as a plain prompt.
+It does not apply a model-specific chat template yet. This is sufficient for:
+
+- smoke tests,
+- RAG-style prompts (excerpts + question in a single message).
+
+It is not yet a full multi-turn chatbot implementation.
+
+## Legacy llama.cpp notes (deprecated)
+
+Older ADRs describe a llama.cpp / GGUF backend. The code may still contain
+placeholders for it, but the current baseline is vLLM + AWQ (see ADR-015/016/017).
+
+The docs chatbot backend (`docs_chat/backend.py`) talks to whichever backend is
+configured here via HTTP.

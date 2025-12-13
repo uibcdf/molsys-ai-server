@@ -46,8 +46,8 @@ This roadmap focuses on getting a **usable MVP** while keeping the architecture 
   - API usage examples,
   - docstring-based Q&A,
   - simple workflows.
-- Train a first QLoRA on Qwen2.5-7B for MolSys-AI on the training node.
+- Train a first QLoRA/LoRA on the selected base model for MolSys-AI (see ADR-017).
 - Publish the resulting model under `uibcdf/` on Hugging Face Hub.
-- Update the model server to use this specialized model.
+- Update the model server to use this specialized model (vLLM + AWQ baseline).
 
 Further versions will refine the agent autonomy, add more tools and improve robustness.

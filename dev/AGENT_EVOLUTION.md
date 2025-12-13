@@ -59,7 +59,7 @@ This is the most significant architectural leap.
 
 To make the final goal concrete, consider the following user request:
 
-> "Este pdf es un artículo científico de comparación entre herramientas de detección de pockets. Lee el artículo y extrae la batería de pdb ids de sistemas de prueba para el benchmark, así como los datos cuantitativos sobre la performance de cada librería comparada. Corre esos mismos tests en TopoMT (herramienta de MolSysSuite), saca los mismos datos cuantitativos para comparar y haz un reporte breve de comparación entre los resultados publicados y los obtenidos con TopoMT."
+> "This PDF is a scientific paper comparing pocket-detection tools. Read the paper and extract the benchmark test set (PDB IDs) and the quantitative performance metrics reported for each tool. Then run the same benchmark with TopoMT (a MolSysSuite tool), compute the same metrics, and produce a short report comparing the published results with the TopoMT results."
 
 An agent that has completed the evolution to "Agent as Programmer" would handle this as follows:
 

@@ -113,6 +113,84 @@ class LlamaCppBackend(ModelBackend):
         return text.strip()
 
 
+class VLLMBackend(ModelBackend):
+    """Backend powered by vLLM.
+
+    This implementation expects `local_path` and `tensor_parallel_size`
+    fields under the `model` section of the configuration, pointing to
+    a local model directory or HuggingFace ID, and the number of GPUs to use.
+    """
+
+    def __init__(self, model_cfg: Dict[str, Any]) -> None:
+        try:
+            from vllm import LLM, SamplingParams  # type: ignore
+        except ImportError as exc:  # pragma: no cover - depends on external package
+            raise RuntimeError(
+                "vLLM is not installed but backend 'vllm' "
+                "was requested in the configuration."
+            ) from exc
+
+        model_path = model_cfg.get("local_path")
+        if not model_path:
+            raise RuntimeError(
+                "Configuration for backend 'vllm' must define "
+                "`model.local_path` with a path to a model file or HuggingFace ID."
+            )
+
+        tensor_parallel_size = model_cfg.get("tensor_parallel_size", 1)
+        quantization = model_cfg.get(
+            "quantization", None
+        )  # Default to None to use full precision or model's default
+        max_model_len = model_cfg.get("max_model_len")
+        gpu_memory_utilization = model_cfg.get("gpu_memory_utilization")
+        enforce_eager = model_cfg.get("enforce_eager")
+        dtype = model_cfg.get("dtype")
+
+        llm_kwargs: Dict[str, Any] = {
+            "model": model_path,
+            "tensor_parallel_size": tensor_parallel_size,
+            "quantization": quantization,
+            "trust_remote_code": True,  # Required for some models, e.g., Qwen
+        }
+        if max_model_len is not None:
+            llm_kwargs["max_model_len"] = int(max_model_len)
+        if gpu_memory_utilization is not None:
+            llm_kwargs["gpu_memory_utilization"] = float(gpu_memory_utilization)
+        if enforce_eager is not None:
+            llm_kwargs["enforce_eager"] = bool(enforce_eager)
+        if dtype is not None:
+            llm_kwargs["dtype"] = str(dtype)
+
+        # Minimal LLM initialisation; additional parameters can be added
+        # later according to hardware and performance needs.
+        self._llm = LLM(**llm_kwargs)
+        self._sampling_params = SamplingParams(
+            temperature=0.7,
+            top_p=0.95,
+            max_tokens=256,
+        )
+
+    def chat(self, messages: List[Message]) -> str:
+        # vLLM expects a list of dictionaries for conversation history
+        # https://vllm.ai/docs/usage/models/multimodal.html#apply_chat_template
+        # For simple chat, we can just pass the last user message for now,
+        # but a full chat template application would be better.
+        prompt = messages[-1].content # Get the last message from the user
+        
+        try:
+            outputs = self._llm.generate(
+                [prompt], 
+                self._sampling_params,
+                # For chat models, it's better to use `apply_chat_template`
+                # if the model supports it, but for a general `ModelBackend`
+                # this is simpler.
+            )
+            text = outputs[0].outputs[0].text
+        except Exception as exc: # pragma: no cover - backend-specific
+            raise RuntimeError("Model backend failed to generate a reply.") from exc
+        
+        return text.strip()
+
 @lru_cache()
 def load_config() -> Dict[str, Any]:
     """Load the YAML configuration for the model server.
@@ -152,8 +230,8 @@ def get_model_backend() -> ModelBackend:
     if backend_name == "stub":
         return StubBackend()
 
-    if backend_name == "llama_cpp":
-        return LlamaCppBackend(model_cfg)
+    if backend_name == "vllm":
+        return VLLMBackend(model_cfg)
 
     raise RuntimeError(f"Unsupported model backend '{backend_name}'.")
 

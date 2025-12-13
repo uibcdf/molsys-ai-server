@@ -26,6 +26,13 @@ See:
 
 ## Development environment
 
+Two environments are commonly used:
+
+1. **Development (general code + docs + tests)** via `environment.yml`.
+2. **Inference (vLLM on RTX GPUs)** via the runbook in `dev/RUNBOOK_VLLM.md`.
+
+### Option A — Development environment (`environment.yml`)
+
 The recommended way to create a development environment is with `mamba` or `conda`:
 
 ```bash
@@ -43,6 +50,14 @@ conda activate molsys-ai
 This environment uses Python 3.12, installs MolSys* ecosystem tools from the `uibcdf` channel,  
 and includes the core Python dependencies used by this repository.  
 Alternative setups using `venv` + `pip` are described in `dev/DEV_GUIDE.md`.
+
+### Option B — Inference environment (vLLM)
+
+For the current, working vLLM setup (CUDA 12.9 + AWQ model + `uvicorn` smoke tests),
+see:
+
+- `dev/RUNBOOK_VLLM.md`
+- `healthy_vllm_env.md` (minimal Conda+pip environment note)
 
 ## Language policy
 

@@ -1,18 +1,23 @@
 
-# Example configuration for the MolSys-AI model server (MVP)
+# Example configuration for the MolSys-AI model server (vLLM)
 
 model:
-  # Backend options:
-  # - "stub"      -> echo behaviour (no real model loaded)
-  # - "llama_cpp" -> use llama-cpp-python with a local GGUF file
-  backend: "stub"
+  # Backend: "vllm" is now the standard for production.
+  backend: "vllm"
 
-  # Optional metadata about the model on Hugging Face Hub.
-  hub_id: "uibcdf/molsys-ai-qwen2p5-7b-proto"  # placeholder
-  revision: "main"
+  # The official model for the project, hosted on the uibcdf organization
+  # (ADR-017). On HPC nodes it is recommended to download the model locally
+  # (Hugging Face SSH + git-lfs) and point `local_path` to that directory.
+  local_path: "/abs/path/to/models/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
 
-  # Device/hardware hints for future backends (not used by the stub backend).
-  device: "cuda:0"
-
-  # When using backend: "llama_cpp", you must set a local path to the GGUF file:
-  # local_path: "/path/to/molsys-ai-qwen2p5-7b-proto.gguf"
+  # Configuration for the vLLM backend.
+  # Use 1 GPU for the MVP baseline (low concurrency).
+  tensor_parallel_size: 1
+  # Specify the quantization method.
+  quantization: "awq"
+  # Set a max model length (tokens). 8192 is a reasonable baseline on 11 GB GPUs.
+  max_model_len: 8192
+  # Conservative memory utilization for stability.
+  gpu_memory_utilization: 0.80
+  # Stability-first baseline: disable torch.compile/cudagraph.
+  enforce_eager: true

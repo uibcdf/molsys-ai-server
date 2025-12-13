@@ -14,7 +14,7 @@ MyST documentation sites (see `docs/` and `web_widget/`).
     - Response body:
       - `{"answer": "..."}` – model-generated answer.
 - On startup it:
-  - builds an in-memory RAG index from `.txt` documents,
+  - builds an embedding-based RAG index from Markdown documents,
   - uses `rag.build_index` and `rag.retriever` to populate the index.
 
 ## Configuration
@@ -22,12 +22,12 @@ MyST documentation sites (see `docs/` and `web_widget/`).
 The backend is configured via environment variables:
 
 - `MOLSYS_AI_DOCS_DIR`
-  - Directory containing `.txt` documents used for RAG.
+  - Directory containing `*.md` documents used for RAG.
   - Default: `docs_chat/data/docs` relative to this directory.
 
 - `MOLSYS_AI_DOCS_INDEX`
-  - Reserved for a future FAISS-based index path.
-  - Currently not used; the index lives in memory.
+  - Path where the built index is stored (pickle file).
+  - Default: `docs_chat/data/rag_index.pkl`.
 
 - `MOLSYS_AI_MODEL_SERVER_URL`
   - Base URL of the MolSys-AI model server.
@@ -40,9 +40,10 @@ The backend is configured via environment variables:
 On FastAPI startup, the handler:
 
 - Calls `rag.build_index.build_index(DOCS_SOURCE_DIR, DOCS_INDEX_PATH)` to:
-  - read all `*.txt` files under `DOCS_SOURCE_DIR`,
+  - read all `*.md` files under `DOCS_SOURCE_DIR`,
   - create `Document` objects with basic metadata (`{"path": ...}`),
-  - populate the in-memory index for `rag.retriever.retrieve`.
+  - embed chunks using `sentence-transformers`,
+  - store the index at `DOCS_INDEX_PATH` and load it into memory.
 
 When `POST /v1/docs-chat` is called:
 
@@ -66,7 +67,7 @@ uvicorn docs_chat.backend:app --reload
 
 By default this will listen on `http://127.0.0.1:8000` and use:
 
-- `docs_chat/data/docs` as the source for `.txt` files (if the directory exists),
+- `docs_chat/data/docs` as the source for `*.md` files (if the directory exists),
 - `http://127.0.0.1:8000` as the model server URL.
 
 ## Integration with the web widget
@@ -90,8 +91,6 @@ By default this will listen on `http://127.0.0.1:8000` and use:
 
 ## Future work
 
-- Replace the simple substring-based retrieval in `rag.retriever` with a
-  proper embedding-based retriever and FAISS index.
+- Replace the current pickle-based index with a FAISS-based vector store.
 - Add authentication / rate limiting if needed for public deployments.
 - Improve prompt construction for better use of documentation context.
-
