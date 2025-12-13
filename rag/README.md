@@ -49,6 +49,9 @@ The goal is to allow the agent to:
   - Splits content into small chunks (currently by paragraph).
   - Embeds chunks using a sentence-transformers model
     (see `rag/embeddings.py`, default: `all-MiniLM-L6-v2`).
+  - For offline smoke tests (or minimal environments), embeddings can fall back
+    to a lightweight hashing baseline via `MOLSYS_AI_EMBEDDINGS=hashing`. This
+    keeps the system runnable but will significantly reduce retrieval quality.
   - Stores the resulting `Document` list (including embeddings) as a pickle
     file at `index_path`.
 
@@ -75,7 +78,7 @@ To experiment quickly:
    ```
 
 3. Ensure the model server is running (stub or real) on
-   `http://127.0.0.1:8000` (or set `MOLSYS_AI_MODEL_SERVER_URL`).
+   `http://127.0.0.1:8001` (or set `MOLSYS_AI_MODEL_SERVER_URL`).
 
 4. Call the endpoint:
 

@@ -43,28 +43,56 @@ Significant progress has been made in establishing the inference stack with GPU 
   - `PATH=$CUDA_HOME/bin:$PATH`
   This is required for FlashInfer JIT compilation.
 - **Single-GPU inference:** `model_server` + vLLM successfully loads the model and answers `/v1/chat`.
+- **Multi-turn chat support:** the vLLM backend now applies the model chat template (via `transformers`), so `/v1/chat`
+  accepts full `messages` history (not just the last user prompt).
 - **Stable baseline config (11 GB GPU):**
   - `max_model_len=8192`
   - `gpu_memory_utilization=0.80`
   - `enforce_eager=true` (stability-first; avoids OOM during compilation/warmup)
   - Observed VRAM usage during long-prompt tests: ~9.4–9.8 GiB on GPU0.
+- **Reproducible smoke runner:** `dev/smoke_vllm.sh` starts the server, performs minimal + multi-turn requests, and
+  cleans up on exit (including best-effort cleanup of any stray `VLLM::EngineCore` processes).
+- **Docs chatbot end-to-end (backend):** validated `docs_chat` → `model_server`:
+  - `POST /v1/docs-chat` with legacy `query` returns `OK`,
+  - `POST /v1/docs-chat` with `messages` history preserves context (multi-turn) and returns `Diego` in the test.
+- **RAG embeddings validation:** `docs_chat` was also validated with `sentence-transformers` installed (v5.2.0), building a
+  small Markdown index and answering a retrieval-backed question correctly (example: returns `1VII` for a synthetic doc).
 
 ## 3. Current Status
 
-The foundational model (`Llama-3.1-8B-Instruct-AWQ-INT4`) is deployed on Hugging Face (`uibcdf` organization). The `vLLM` backend for the `model_server` has been implemented. The development environment is now being set up with a clean `conda` environment using the hybrid `conda`+`pip` strategy to ensure all dependencies, especially `vLLM` and its CUDA requirements, are correctly installed.
+The foundational model (`Llama-3.1-8B-Instruct-AWQ-INT4`) is deployed on Hugging Face (`uibcdf` organization). The vLLM
+backend for `model_server` is working on RTX 2080 Ti GPUs (CUDA 12.9 `nvcc` + vLLM `cu129` wheels) and supports multi-turn
+chat formatting.
+
+Repository documentation has been consolidated around:
+
+- `AGENTS.md` as the single “how to work here” entry point,
+- `dev/RUNBOOK_VLLM.md` as the inference runbook,
+- a minimal `environment.yml` for general development (install Python deps via `pip install -e ".[dev]"`).
+
+The docs chatbot stack is now validated end-to-end at the backend/API level, but
+the browser/widget integration is not yet validated on a real Sphinx site:
+
+- `docs_chat/backend.py` now accepts `messages` (recommended) in addition to legacy `query`,
+- `web_widget/molsys_ai_widget.js` now keeps conversation history and sends it as `messages` when `mode: "backend"`.
+  This has been validated at the backend level (HTTP requests). Browser/widget integration still needs a real docs site
+  deployment decision (same-origin vs. separate service + CORS).
 
 ## 4. Next Steps
 
-The immediate next steps are focused on bringing the new inference stack online and verifying its functionality:
+The immediate next steps focus on validating the docs chatbot and then iterating on quality:
 
-1.  **Environment Setup Finalization:** Complete the creation of the clean `molsys-ai-vllm` `conda` environment using the hybrid `conda`+`pip` strategy.
-2.  **Document the runbook:** Consolidate the working procedure in `dev/RUNBOOK_VLLM.md`.
-3.  **Verify `vLLM` Load (Multi-GPU):** Optional: test `tensor_parallel_size=3` across all RTX 2080 Ti GPUs (only if larger context/models are needed).
-5.  **Benchmarking Suite Development:** Begin developing the benchmarking suite (as per ADR-011 and ADR-017) to evaluate the performance of `Llama-3.1` against other candidate models on `molsys-ai` specific tasks.
-6.  **Improve RAG Quality:**
+1.  **Widget integration smoke:** Run `model_server` (vLLM) + `docs_chat` together and verify that the web widget (Sphinx)
+    can talk to `POST /v1/docs-chat` in multi-turn mode (`messages` history).
+2.  **Docs deployment integration:** Decide how the widget and backend will be deployed for real docs sites (same-origin vs
+    separate service; CORS; rate-limiting if needed).
+3.  **Improve RAG quality:**
     - **Prompt Engineering:** Refine the prompt sent to the LLM to make more effective use of the documentation context.
     - **Chunking:** Evaluate and improve the document splitting strategy (`chunking`) in `rag/build_index.py`.
-7.  **Expand Agent Tools:**
+4.  **Benchmarking suite:** Implement benchmark tasks (ADR-011/017) to evaluate changes in retrieval/prompting/models.
+5.  **Expand agent tools:**
     - Begin implementing new real tools from the `molsysmt` ecosystem in `agent/tools/`, following the `ROADMAP.md` and ADRs.
-8.  **Prepare Fine-Tuning Dataset (Roadmap v0.5):**
+6.  **Multi-GPU note (optional):** Only if we need more context or larger models, test `tensor_parallel_size=3` across the
+    3× RTX 2080 Ti GPUs.
+7.  **Prepare fine-tuning dataset (Roadmap v0.5):**
     - Start collecting and structuring data (code examples, question-answer pairs) for the future fine-tuning of the model.

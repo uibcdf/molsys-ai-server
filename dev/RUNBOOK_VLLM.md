@@ -165,6 +165,36 @@ curl -sS -X POST http://127.0.0.1:8001/v1/chat \
 For RAG experiments, include excerpts and the question in the same `content`
 (single-message RAG). Multi-turn chat is supported as well.
 
+### 6.3 Docs chatbot backend (end-to-end)
+
+If you want to validate the docs chatbot path (`docs_chat` → `model_server`):
+
+1. Keep `model_server` running on `http://127.0.0.1:8001`.
+2. Start the docs backend on `8000`:
+
+```bash
+mkdir -p /tmp/molsys_ai_docs_smoke
+cat >/tmp/molsys_ai_docs_smoke/example.md <<'MD'
+# Example
+
+The example PDB id is **1VII**.
+MD
+
+MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_DOCS_DIR=/tmp/molsys_ai_docs_smoke \
+MOLSYS_AI_DOCS_INDEX=/tmp/molsys_ai_docs_smoke.pkl \
+MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+uvicorn docs_chat.backend:app --host 127.0.0.1 --port 8000
+```
+
+3. Call it:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/v1/docs-chat \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"What is the example PDB id? Reply with just the id.","k":3}'
+```
+
 ## 7) Multi-GPU note (optional)
 
 If/when you need more context or larger models, you can try tensor parallelism:

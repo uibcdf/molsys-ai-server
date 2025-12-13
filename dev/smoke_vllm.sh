@@ -62,6 +62,37 @@ cleanup() {
     kill -9 "${UVICORN_PID}" >/dev/null 2>&1 || true
     pkill -KILL -P "${UVICORN_PID}" >/dev/null 2>&1 || true
   fi
+
+  # vLLM may spawn an EngineCore process that can outlive uvicorn. Kill any
+  # EngineCore PIDs that appeared after this script started.
+  if command -v pgrep >/dev/null 2>&1; then
+    mapfile -t ENGINECORE_PIDS_AFTER < <(pgrep -f 'VLLM::EngineCore' 2>/dev/null || true)
+    for pid in "${ENGINECORE_PIDS_AFTER[@]:-}"; do
+      local is_old=0
+      for prev in "${ENGINECORE_PIDS_BEFORE[@]:-}"; do
+        if [[ "${pid}" == "${prev}" ]]; then
+          is_old=1
+          break
+        fi
+      done
+      if [[ "${is_old}" == "0" ]]; then
+        kill -TERM "${pid}" >/dev/null 2>&1 || true
+      fi
+    done
+    sleep 1
+    for pid in "${ENGINECORE_PIDS_AFTER[@]:-}"; do
+      local is_old=0
+      for prev in "${ENGINECORE_PIDS_BEFORE[@]:-}"; do
+        if [[ "${pid}" == "${prev}" ]]; then
+          is_old=1
+          break
+        fi
+      done
+      if [[ "${is_old}" == "0" ]]; then
+        kill -KILL "${pid}" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
 }
 trap cleanup EXIT
 
@@ -70,8 +101,11 @@ require_cmd curl
 require_cmd uvicorn
 require_cmd grep
 require_cmd ss
+require_cmd pgrep
 
 export HOST PORT CUDA_VISIBLE_DEVICES
+
+mapfile -t ENGINECORE_PIDS_BEFORE < <(pgrep -f 'VLLM::EngineCore' 2>/dev/null || true)
 
 if [[ -z "${CUDA_HOME:-}" ]]; then
   echo "CUDA_HOME is not set. Expected something like: export CUDA_HOME=/usr/local/cuda" >&2

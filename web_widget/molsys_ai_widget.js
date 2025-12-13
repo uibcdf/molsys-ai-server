@@ -10,6 +10,10 @@
 // backend will be added in later iterations.
 
 (function () {
+  function ensureString(value) {
+    return typeof value === "string" ? value : "";
+  }
+
   function createChatContainer(root) {
     const globalConfig = window.molsysAiChatConfig || {};
     const mode = globalConfig.mode || "placeholder"; // "placeholder" | "backend"
@@ -89,17 +93,20 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    appendMessage(
-      "Hi! This MolSys-AI docs bot is not ready yet. "
-        + "Stay tuned for more features soon...",
-      "assistant"
-    );
+    const conversation = [];
+    const greeting =
+      mode === "backend"
+        ? "Hi! Ask me about the MolSys* documentation."
+        : "Hi! This MolSys-AI docs bot is not ready yet. Stay tuned for more features soon...";
+    appendMessage(greeting, "assistant");
+    conversation.push({ role: "assistant", content: greeting });
 
     function handleSend() {
       const text = input.value.trim();
       if (!text) return;
       appendMessage(text, "user");
       input.value = "";
+      conversation.push({ role: "user", content: text });
 
       if (mode === "backend") {
         // Call the docs-chat backend. Even in backend mode this stays simple:
@@ -108,7 +115,7 @@
           fetch(backendUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: text, k: 5 }),
+            body: JSON.stringify({ messages: conversation, k: 5 }),
           })
             .then(function (resp) {
               if (!resp.ok) {
@@ -117,34 +124,36 @@
               return resp.json();
             })
             .then(function (data) {
-              var answer =
-                (data && (data.answer || data.content)) ||
-                "The docs backend did not return a valid answer.";
+              var answer = ensureString(data && (data.answer || data.content));
+              if (!answer) {
+                answer = "The docs backend did not return a valid answer.";
+              }
               appendMessage(answer, "assistant");
+              conversation.push({ role: "assistant", content: answer });
             })
             .catch(function (err) {
               console.error("MolSys-AI docs widget error:", err);
-              appendMessage(
+              var fallback =
                 "The docs backend is not available right now. "
-                  + "Please try again later.",
-                "assistant"
-              );
+                  + "Please try again later.";
+              appendMessage(fallback, "assistant");
+              conversation.push({ role: "assistant", content: fallback });
             });
         } catch (e) {
           console.error("MolSys-AI docs widget error:", e);
-          appendMessage(
+          var fallback =
             "The docs backend is not available right now. "
-              + "Please try again later.",
-            "assistant"
-          );
+              + "Please try again later.";
+          appendMessage(fallback, "assistant");
+          conversation.push({ role: "assistant", content: fallback });
         }
       } else {
         // Placeholder mode: always respond with the same friendly message.
-        appendMessage(
+        var placeholder =
           "This bot is still under development. "
-            + "In future versions it will answer questions about the MolSys* documentation.",
-          "assistant"
-        );
+            + "In future versions it will answer questions about the MolSys* documentation.";
+        appendMessage(placeholder, "assistant");
+        conversation.push({ role: "assistant", content: placeholder });
       }
     }
 

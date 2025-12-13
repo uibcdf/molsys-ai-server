@@ -52,6 +52,12 @@ The validated baseline is:
   - `gpu_memory_utilization=0.80`,
   - `enforce_eager=true`.
 
+Validated versions on the current machine:
+
+- `torch==2.9.0+cu129`
+- `vllm==0.12.0`
+- `sentence-transformers==5.2.0` (for RAG quality; optional)
+
 See `dev/RUNBOOK_VLLM.md` for the full procedure and smoke tests.
 
 ## Running servers (non-blocking)
@@ -60,6 +66,21 @@ To run servers without blocking your terminal, use `nohup`:
 
 ```bash
 nohup uvicorn model_server.server:app --reload > server.log 2>&1 &
+```
+
+For a reproducible, single-GPU vLLM smoke test (including a small multi-turn
+check), use:
+
+- `./dev/smoke_vllm.sh`
+
+Note: vLLM may spawn a `VLLM::EngineCore` process; if a crash leaves GPU memory
+allocated, kill the stray process before retrying.
+
+Docs chatbot (backend) can be run separately (typically in the dev environment)
+and pointed at the model server:
+
+```bash
+MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001 uvicorn docs_chat.backend:app --host 127.0.0.1 --port 8000
 ```
 
 ## Testing conventions
@@ -81,6 +102,10 @@ See `tests/test_smoke.py` for the reference pattern.
 - The current MVP uses sentence-transformers embeddings and stores a pickled
   index on disk (default: `data/rag_index.pkl`).
 - Index building is implemented in `rag.build_index.build_index(source_dir, index_path)`.
+- Offline fallback: if `sentence-transformers` is not installed, embeddings fall back
+  to a deterministic hashing baseline. This keeps `docs_chat` runnable for smoke tests,
+  but retrieval quality will be much lower. You can force this mode with:
+  - `MOLSYS_AI_EMBEDDINGS=hashing`
 
 ## Documentation pointers
 
@@ -90,6 +115,7 @@ See `tests/test_smoke.py` for the reference pattern.
 - ADRs: `dev/decisions/`
 - Status handoff: `checkpoint.md`
 - vLLM runbook: `dev/RUNBOOK_VLLM.md`
+- Docs chatbot backend: `docs_chat/README.md`
 
 ## Large files (do not read)
 

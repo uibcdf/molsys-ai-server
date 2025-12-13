@@ -9,7 +9,9 @@ MyST documentation sites (see `docs/` and `web_widget/`).
 - The backend exposes a single HTTP endpoint:
   - `POST /v1/docs-chat`
     - Request body: JSON with
-      - `query: str` – user question.
+      - Either:
+        - `messages: [{"role": "...", "content": "..."}]` – full conversation history (recommended).
+        - `query: str` – single-turn question (backwards-compatible).
       - `k: int` (optional, default `5`) – number of RAG documents to retrieve.
     - Response body:
       - `{"answer": "..."}` – model-generated answer.
@@ -31,7 +33,7 @@ The backend is configured via environment variables:
 
 - `MOLSYS_AI_MODEL_SERVER_URL`
   - Base URL of the MolSys-AI model server.
-  - Default: `http://127.0.0.1:8000`.
+  - Default: `http://127.0.0.1:8001`.
   - The docs-chat backend uses this URL to call `POST /v1/chat` via
     `agent.model_client.HTTPModelClient`.
 
@@ -44,6 +46,13 @@ On FastAPI startup, the handler:
   - create `Document` objects with basic metadata (`{"path": ...}`),
   - embed chunks using `sentence-transformers`,
   - store the index at `DOCS_INDEX_PATH` and load it into memory.
+
+Note on embeddings:
+
+- For good retrieval quality, install `sentence-transformers` and use the default model.
+- For offline smoke tests, you can run without `sentence-transformers`; the code falls back
+  to a lightweight hashing embedding model (set `MOLSYS_AI_EMBEDDINGS=hashing` to force it).
+- If `DOCS_SOURCE_DIR` does not exist or contains no `*.md`, the server still starts, but retrieval returns no snippets.
 
 When `POST /v1/docs-chat` is called:
 
@@ -68,7 +77,34 @@ uvicorn docs_chat.backend:app --reload
 By default this will listen on `http://127.0.0.1:8000` and use:
 
 - `docs_chat/data/docs` as the source for `*.md` files (if the directory exists),
-- `http://127.0.0.1:8000` as the model server URL.
+- `http://127.0.0.1:8001` as the model server URL (run `model_server` on `8001`).
+
+## End-to-end smoke (recommended)
+
+Start the model server (vLLM) on `8001` (see `dev/RUNBOOK_VLLM.md`), then run:
+
+```bash
+mkdir -p /tmp/molsys_ai_docs_smoke
+cat >/tmp/molsys_ai_docs_smoke/example.md <<'MD'
+# Example
+
+The example PDB id is **1VII**.
+MD
+
+MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_DOCS_DIR=/tmp/molsys_ai_docs_smoke \
+MOLSYS_AI_DOCS_INDEX=/tmp/molsys_ai_docs_smoke.pkl \
+MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+uvicorn docs_chat.backend:app --host 127.0.0.1 --port 8000
+```
+
+Then:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/v1/docs-chat \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"What is the example PDB id? Reply with just the id.","k":3}'
+```
 
 ## Integration with the web widget
 
@@ -87,6 +123,7 @@ By default this will listen on `http://127.0.0.1:8000` and use:
 
 - When `mode: "backend"` is set, the widget:
   - sends user messages to `/v1/docs-chat`,
+  - keeps conversation history in the browser and sends it as `messages`,
   - displays the `answer` field returned by this backend.
 
 ## Future work
