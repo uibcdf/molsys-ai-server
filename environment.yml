@@ -5,27 +5,15 @@ channels:
   - defaults
 dependencies:
   - python=3.12
+  - pip
   # MolSys* ecosystem tools (from the laboratory channel)
   # - molsysmt
   # - molsysviewer
   # - topomt
   # - elastnet
   # - pharmacophoremt
-  # Core Python tooling and libraries used by this repository
-  - fastapi
-  - uvicorn
-  - pydantic
-  - rich
-  - requests
-  - pytest
-  - pytest-mock
-  - ruff
-  - mypy
-  - sphinx
-  - myst-parser
-  - pydata-sphinx-theme
-  - numpy
-  - sentence-transformers
-  - pip
+  # Install Python deps via pip after creating the environment:
+  #   pip install -e ".[dev]"
+  #
   # vLLM is intentionally not installed here. See `dev/RUNBOOK_VLLM.md` for the
   # validated inference environment (pip + cu129 + system CUDA toolkit).

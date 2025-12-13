@@ -45,9 +45,10 @@ Open point:
   changing the agent core.
 
 Related open point:
-- Proper chat formatting: the current MVP server uses the last `user` message
-  as a plain prompt. A real chatbot needs a model-specific chat template and
-  conversation context management (history truncation/summarization).
+- Conversation context management: the vLLM backend now applies the model chat
+  template (multi-turn), but a real chatbot still needs robust context
+  management (history truncation strategy, optional summarization, and/or
+  external memory).
 
 ## 5. Agent Planner Evolution Strategy
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -130,6 +130,14 @@ class VLLMBackend(ModelBackend):
                 "was requested in the configuration."
             ) from exc
 
+        try:
+            from transformers import AutoTokenizer  # type: ignore
+        except ImportError as exc:  # pragma: no cover - depends on external package
+            raise RuntimeError(
+                "transformers is required for backend 'vllm' "
+                "(to apply chat templates), but it is not installed."
+            ) from exc
+
         model_path = model_cfg.get("local_path")
         if not model_path:
             raise RuntimeError(
@@ -145,10 +153,24 @@ class VLLMBackend(ModelBackend):
         gpu_memory_utilization = model_cfg.get("gpu_memory_utilization")
         enforce_eager = model_cfg.get("enforce_eager")
         dtype = model_cfg.get("dtype")
+        self._max_model_len: Optional[int] = int(max_model_len) if max_model_len is not None else None
+
+        def _coerce_bool(value: Any) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered in {"1", "true", "yes", "y", "on"}:
+                    return True
+                if lowered in {"0", "false", "no", "n", "off"}:
+                    return False
+            raise ValueError(f"Invalid boolean value: {value!r}")
 
         llm_kwargs: Dict[str, Any] = {
             "model": model_path,
-            "tensor_parallel_size": tensor_parallel_size,
+            "tensor_parallel_size": int(tensor_parallel_size),
             "quantization": quantization,
             "trust_remote_code": True,  # Required for some models, e.g., Qwen
         }
@@ -157,7 +179,7 @@ class VLLMBackend(ModelBackend):
         if gpu_memory_utilization is not None:
             llm_kwargs["gpu_memory_utilization"] = float(gpu_memory_utilization)
         if enforce_eager is not None:
-            llm_kwargs["enforce_eager"] = bool(enforce_eager)
+            llm_kwargs["enforce_eager"] = _coerce_bool(enforce_eager)
         if dtype is not None:
             llm_kwargs["dtype"] = str(dtype)
 
@@ -169,13 +191,75 @@ class VLLMBackend(ModelBackend):
             top_p=0.95,
             max_tokens=256,
         )
+        self._max_new_tokens = int(self._sampling_params.max_tokens or 0)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+        )
+
+    def _format_prompt(self, messages: List[Message]) -> str:
+        chat_messages = [{"role": m.role, "content": m.content} for m in messages]
+
+        # Prefer the model's chat template when available (required for Llama-3.1 Instruct).
+        try:
+            has_template = bool(getattr(self._tokenizer, "chat_template", None))
+        except Exception:
+            has_template = False
+
+        if has_template and hasattr(self._tokenizer, "apply_chat_template"):
+            return self._tokenizer.apply_chat_template(
+                chat_messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
+        # Fallback: basic role-tag formatting.
+        parts: list[str] = []
+        for msg in messages:
+            parts.append(f"{msg.role.upper()}: {msg.content}")
+        parts.append("ASSISTANT:")
+        return "\n".join(parts)
+
+    def _truncate_history_if_needed(self, messages: List[Message]) -> List[Message]:
+        if self._max_model_len is None:
+            return messages
+
+        # Keep some headroom for generation.
+        budget = max(self._max_model_len - self._max_new_tokens, 1)
+
+        def prompt_len(msgs: List[Message]) -> int:
+            prompt = self._format_prompt(msgs)
+            return int(len(self._tokenizer(prompt, add_special_tokens=False).input_ids))
+
+        if prompt_len(messages) <= budget:
+            return messages
+
+        system_msgs = [m for m in messages if m.role == "system"]
+        non_system = [m for m in messages if m.role != "system"]
+
+        # Drop oldest non-system messages until it fits.
+        tail: List[Message] = []
+        for msg in reversed(non_system):
+            tail.append(msg)
+            candidate = system_msgs + list(reversed(tail))
+            if prompt_len(candidate) > budget:
+                tail.pop()
+                break
+
+        candidate = system_msgs + list(reversed(tail))
+        if candidate and prompt_len(candidate) <= budget:
+            return candidate
+
+        # Last resort: keep only the last user message.
+        last_user = next((m for m in reversed(messages) if m.role == "user"), None)
+        return system_msgs + ([last_user] if last_user else [])
 
     def chat(self, messages: List[Message]) -> str:
-        # vLLM expects a list of dictionaries for conversation history
-        # https://vllm.ai/docs/usage/models/multimodal.html#apply_chat_template
-        # For simple chat, we can just pass the last user message for now,
-        # but a full chat template application would be better.
-        prompt = messages[-1].content # Get the last message from the user
+        if not messages:
+            raise RuntimeError("No messages provided.")
+
+        trimmed_messages = self._truncate_history_if_needed(messages)
+        prompt = self._format_prompt(trimmed_messages)
         
         try:
             outputs = self._llm.generate(
@@ -239,6 +323,9 @@ def get_model_backend() -> ModelBackend:
 @app.post("/v1/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     """Chat endpoint backed by the configured model backend."""
+
+    if not req.messages:
+        raise HTTPException(status_code=400, detail="At least one message is required.")
 
     try:
         backend = get_model_backend()

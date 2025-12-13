@@ -70,13 +70,18 @@ Hugging Face SSH + `git-lfs`, and a stable configuration for 11 GB GPUs), see:
 
 ### Important note (chat formatting)
 
-The current MVP vLLM backend treats the last `user` message as a plain prompt.
-It does not apply a model-specific chat template yet. This is sufficient for:
+The vLLM backend applies the model's chat template (via `transformers` /
+`AutoTokenizer.apply_chat_template`) when available, enabling multi-turn chat.
+For very long sessions, the server may drop the oldest non-system messages to
+stay within `max_model_len`.
+
+This is sufficient for:
 
 - smoke tests,
 - RAG-style prompts (excerpts + question in a single message).
 
-It is not yet a full multi-turn chatbot implementation.
+It is not yet a full chatbot implementation (e.g., summarization-based long-term
+memory is not implemented).
 
 ## Legacy llama.cpp notes (deprecated)
 

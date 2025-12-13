@@ -7,7 +7,7 @@ The goal is a stable baseline for:
 
 - local, self-hosted inference,
 - RAG experiments (long prompts),
-- later chatbot work (multi-turn) once the chat template is wired properly.
+- chatbot work (multi-turn) using the model chat template.
 
 This runbook is intentionally practical (HPC-friendly) and uses:
 
@@ -142,6 +142,16 @@ OpenAPI:
 
 ## 6) Smoke tests
 
+Recommended: use the bundled script (it starts the server, waits for readiness,
+hits the API, and cleans up on exit):
+
+```bash
+./dev/smoke_vllm.sh
+```
+
+This script includes a small multi-turn request to validate that the chat
+template is applied.
+
 ### 6.1 Minimal generation
 
 ```bash
@@ -152,9 +162,8 @@ curl -sS -X POST http://127.0.0.1:8001/v1/chat \
 
 ### 6.2 RAG-style long prompt
 
-Note: the current `model_server` vLLM backend uses the last `user` message as a
-single prompt (no chat template yet). For RAG experiments, include excerpts and
-the question in the same `content`.
+For RAG experiments, include excerpts and the question in the same `content`
+(single-message RAG). Multi-turn chat is supported as well.
 
 ## 7) Multi-GPU note (optional)
 
@@ -171,4 +180,3 @@ CUDA_VISIBLE_DEVICES=0,1,2 ...
 ```
 
 This is not required for the current baseline.
-
