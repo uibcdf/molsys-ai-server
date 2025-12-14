@@ -1,12 +1,12 @@
 
-# MolSys-AI
+# MolSys-AI Server
 
-MolSys-AI is the AI assistant project for the UIBCDF ecosystem:
+This repository hosts the **server-side** components of the MolSys-AI project for the UIBCDF ecosystem:
 
 - MolSysMT
 - MolSysViewer
 - TopoMT
-- and related computational tools (OpenMM, etc.)
+- and related tools in the MolSysSuite ecosystem.
 
 MolSys-AI aims to provide:
 
@@ -16,6 +16,16 @@ MolSys-AI aims to provide:
 - A flexible **model serving** layer for self-hosted LLMs.
 
 This repository currently contains the initial architecture, decisions and development roadmap.
+
+Docs chatbot note:
+
+- `POST /v1/docs-chat` returns an `answer` that cites bracketed sources (`[1]`, `[2]`, ...) and a `sources` list that can
+  deep-link to published docs under `https://www.uibcdf.org/<tool>/...#Label` (when an anchors map is available).
+
+## Repository naming note
+
+This repository is the server-side codebase and is expected to live as **`molsys-ai-server`**.
+The Python package and user-facing command for end users remain `molsys-ai`.
 
 See:
 
@@ -47,9 +57,17 @@ conda env create -f environment.yml
 conda activate molsys-ai
 ```
 
-This environment uses Python 3.12, installs MolSys* ecosystem tools from the `uibcdf` channel,  
-and includes the core Python dependencies used by this repository.  
+This environment uses Python 3.12 and includes the core Python dependencies used by this repository.  
 Alternative setups using `venv` + `pip` are described in `dev/DEV_GUIDE.md`.
+
+Note: `environment.yml` intentionally keeps MolSysSuite tools commented out by default to avoid
+pulling extra CUDA-related stacks into the same environment used for vLLM inference.
+For local tool execution, use a dedicated agent environment (see `client/cli/README.md`).
+
+Note on Python packaging:
+
+- `pip install molsys-ai` is intended to install the **CLI client** (lightweight).
+- Server/RAG/docs dependencies are installed via extras (for development use `pip install -e ".[dev]"`).
 
 ### Option B — Inference environment (vLLM)
 

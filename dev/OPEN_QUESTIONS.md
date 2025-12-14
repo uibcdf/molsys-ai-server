@@ -24,15 +24,30 @@ Current draft idea:
 
 Open points:
 - Final format of the ingested docs (HTML vs. markdown vs. plain text).
-- Whether to keep a separate preprocessing step in `rag/build_index.py`.
+- Whether to keep a separate preprocessing step in `server/rag/build_index.py`.
 
 ## 3. Embedding/index update strategy
 
 Questions:
 - How often will the index be rebuilt?
 - Will we support incremental updates (e.g. only re-index changed files)?
-- Where will the FAISS index live (e.g. `rag/index/`) and how will
+- Where will the FAISS index live (e.g. `server/rag/index/`) and how will
   it be versioned?
+
+## 4. Derived corpus generation (LLM-digested artifacts)
+
+We currently index a **literal snapshot** of the documentation files. A planned
+quality improvement is to generate an additional **derived corpus** layer
+(summaries, FAQs, concept cards, API overviews) using an LLM and index it
+alongside the raw docs.
+
+Open questions:
+- What exact artifact types provide the best retrieval lift for MolSysSuite docs?
+- How do we enforce provenance and traceability (sources, commit hashes, prompt, model id)?
+- How do we prevent hallucinations in derived artifacts (e.g. only summarize with citations)?
+- How often do we regenerate derived artifacts (weekly with the snapshot, or on-demand)?
+- Do we store derived artifacts in the same corpus directory under a dedicated subtree
+  (e.g. `derived/`), or in a separate corpus root?
 
 ## 4. Backend model evolution
 
@@ -62,7 +77,7 @@ The specifics of the LLM-based planner (e.g., ReAct, CoT), cost/latency limits, 
 
 ## 6. First concrete MolSysMT/TopoMT tools
 
-- We have placeholders under `agent/tools/`.
+- We have placeholders under `client/agent/tools/`.
 - The first real tools to implement are not fully fixed, but likely:
   - load a molecular system (MolSysMT) and summarise it,
   - run a simple pocket/topography analysis (TopoMT),
@@ -75,7 +90,7 @@ The specifics of the LLM-based planner (e.g., ReAct, CoT), cost/latency limits, 
 
 ## 8. Web chatbot integration details
 
-- The widget skeleton exists under `web_widget/`.
+- The widget skeleton exists under `server/web_widget/`.
 - Open points:
   - Exact JS API and CSS styling.
   - Authentication or rate-limiting (if needed).

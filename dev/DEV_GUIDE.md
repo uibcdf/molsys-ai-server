@@ -43,8 +43,12 @@ conda activate molsys-ai
 
 This environment includes:
 - Python 3.12,
-- the MolSys* ecosystem tools from the `uibcdf` channel,
 - and the core Python tooling used by MolSys-AI.
+
+Note: MolSysSuite tools (`molsysmt`, `molsysviewer`, etc.) are intentionally
+commented out in `environment.yml` by default to avoid pulling heavy scientific
+stacks (some tools pull extra CUDA-related dependencies) into the same environment used for server-side vLLM
+inference.
 
 ### Option B – manual environment (`conda` or `venv`)
 
@@ -73,13 +77,13 @@ You should see the environment name (e.g. `(.venv)` or `(molsys-ai)`) in your sh
 
 With your environment active, install the project in editable mode.
 
-Basic (runtime) install:
+Basic (CLI-only) install:
 
 ```bash
 pip install -e .
 ```
 
-Developer extras (lint/test/docs tooling):
+Developer extras (server/RAG/docs + lint/test tooling):
 
 ```bash
 pip install -e ".[dev]"
@@ -87,22 +91,35 @@ pip install -e ".[dev]"
 
 This installs:
 
-- fastapi, uvicorn, pydantic
-- rich
+- fastapi, uvicorn, pydantic, PyYAML
+- numpy + sentence-transformers (RAG)
+- sphinx + myst-nb (docs)
 - pytest
 - ruff
 - mypy (optional type checking)
 
-## 4. (Optional) Install MolSys* ecosystem tools via conda (manual environments only)
+## 4. (Optional) Install MolSys* ecosystem tools (recommended: separate agent environment)
 
-If you created the environment manually (Option B) and plan to develop or test tools that call the MolSys* libraries,  
-you can install them from the laboratory’s `uibcdf` conda channel:
+If you plan to develop or test tool execution with MolSysSuite, it is recommended to use a dedicated environment for the local agent
+so you do not contaminate the server/vLLM environment.
+
+Example:
+
+```bash
+conda create -n molsys-agent python=3.12 -c conda-forge
+conda activate molsys-agent
+conda install -c uibcdf -c conda-forge molsysmt
+pip install -e ".[cli]"
+```
+
+If you still prefer a single manual environment (Option B), you can install a
+subset of tools from the laboratory’s `uibcdf` conda channel:
 
 ```bash
 conda install -c uibcdf molsysmt molsysviewer topomt elastnet pharmacophoremt
 ```
 
-You can select only the subset you actually need. These libraries are already included if you created the environment from `environment.yml`.
+Select only the subset you actually need.
 
 ## 5. Run the smoke tests
 
@@ -118,7 +135,7 @@ You should see all tests passing.
 
 ### 6.1 Stub backend (default)
 
-If you have **no** `model_server/config.yaml`, or if it contains:
+If you have **no** `server/model_server/config.yaml`, or if it contains:
 
 ```yaml
 model:
@@ -132,6 +149,12 @@ Launch the FastAPI model server:
 
 ```bash
 uvicorn model_server.server:app --reload
+```
+
+Note: if you installed only `pip install -e .`, you must install server deps too:
+
+```bash
+pip install -e ".[server]"
 ```
 
 By default this will start on `http://127.0.0.1:8000`.
@@ -148,7 +171,7 @@ To use a real model via vLLM:
 
 1. Set up the vLLM environment and install a system CUDA Toolkit (`nvcc`).
 2. Download the AWQ model locally (Hugging Face SSH + `git-lfs`).
-3. Create `model_server/config.yaml` based on `model_server/config.example.yaml`.
+3. Create `server/model_server/config.yaml` based on `server/model_server/config.example.yaml`.
 
 For the full, validated procedure, see:
 
@@ -159,18 +182,20 @@ For the full, validated procedure, see:
 With the virtual environment active:
 
 ```bash
-python -m cli.main --message "Hello from MolSys-AI"
+molsys-ai --help
 ```
 
-For now this should print a simple message from the stub model client. You can
-also point the CLI to a running model server:
+Log in (store API key locally):
 
-```text
-molsys-ai --server-url http://127.0.0.1:8000 --message "Hello from MolSys-AI"
+```bash
+molsys-ai login
 ```
 
-As the agent and model server evolve, this CLI will be extended to support
-more commands and interactive sessions.
+Chat (single message):
+
+```bash
+molsys-ai chat -m "Hello from MolSys-AI"
+```
 
 ## 8. Code style and tooling
 
@@ -183,7 +208,7 @@ Examples:
 ```bash
 ruff check .
 pytest
-mypy agent model_server rag
+mypy client/agent server/model_server server/rag server/docs_chat client/cli
 ```
 
 These commands are not yet enforced by CI, but are recommended during development.
@@ -193,21 +218,21 @@ These commands are not yet enforced by CI, but are recommended during developmen
 Suggested starting points for development:
 
 - Agent core:
-  - `agent/core.py`
-  - `agent/planner.py`
-  - `agent/executor.py`
+  - `client/agent/core.py`
+  - `client/agent/planner.py`
+  - `client/agent/executor.py`
 
 - Model server:
-  - `model_server/server.py`
-  - `model_server/config.example.yaml`
+  - `server/model_server/server.py`
+  - `server/model_server/config.example.yaml`
 
 - RAG:
-  - `rag/build_index.py`
-  - `rag/retriever.py`
-  - `rag/embeddings.py`
+  - `server/rag/build_index.py`
+  - `server/rag/retriever.py`
+  - `server/rag/embeddings.py`
 
 - CLI:
-  - `cli/main.py`
+  - `client/cli/main.py`
 
 For a conceptual overview, read:
 

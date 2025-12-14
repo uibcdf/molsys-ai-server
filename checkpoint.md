@@ -1,6 +1,15 @@
-# Checkpoint: MolSys-AI Project Status
+# Checkpoint: MolSys-AI Server Project Status
 
 This document summarizes the current status of the project, its objectives, the progress made, and the next steps.
+
+Repository naming note:
+
+- Server repo: `molsys-ai-server` (this repo).
+- Client repo (planned): `molsys-ai-client`.
+- User-facing distribution + command: `molsys-ai` / `molsys-ai`.
+- Server distribution (if published): `molsys-ai-server`.
+
+See `dev/decisions/ADR-018.md`.
 
 ## 1. Overall Goals (What we want)
 
@@ -57,6 +66,18 @@ Significant progress has been made in establishing the inference stack with GPU 
   - `POST /v1/docs-chat` with `messages` history preserves context (multi-turn) and returns `Diego` in the test.
 - **RAG embeddings validation:** `docs_chat` was also validated with `sentence-transformers` installed (v5.2.0), building a
   small Markdown index and answering a retrieval-backed question correctly (example: returns `1VII` for a synthetic doc).
+- **API authentication policy (production-ready):**
+  - `POST /v1/chat` (internal model backend) can be protected with `MOLSYS_AI_CHAT_API_KEYS` (API key allowlist).
+  - `docs_chat` can authenticate to the model server via `MOLSYS_AI_MODEL_SERVER_API_KEY`.
+  - `POST /v1/docs-chat` is public by default, but can be protected with `MOLSYS_AI_DOCS_CHAT_API_KEYS` if needed.
+  - Smoke scripts support optional API keys via environment variables.
+- **CLI direction (public + lab users):**
+  - The CLI is now an HTTP API client with subcommands: `login`, `chat`, `docs`.
+  - `molsys-ai chat` calls `POST /v1/docs-chat` with `client="cli"` so it can use RAG (specialist answers) and decide when
+    to show sources via an LLM router call.
+  - It stores a user API key locally under `~/.config/molsys-ai/config.json` (mode `0600` when possible).
+  - For keys prefixed with `u1_` (lab/investigator), the CLI attempts a LAN endpoint first and falls back to the public API.
+  - For keys prefixed with `u2_` (external), the CLI uses the public API only.
 
 ## 3. Current Status
 
@@ -69,29 +90,72 @@ Repository documentation has been consolidated around:
 - `AGENTS.md` as the single “how to work here” entry point,
 - `dev/RUNBOOK_VLLM.md` as the inference runbook,
 - a minimal `environment.yml` for general development (install Python deps via `pip install -e ".[dev]"`).
+- the stable API contract for external clients: `dev/API_CONTRACT_V1.md`.
 
-The docs chatbot stack is now validated end-to-end at the backend/API level, but
-the browser/widget integration is not yet validated on a real Sphinx site:
+The docs chatbot stack is now validated end-to-end locally, including the browser/widget path:
 
-- `docs_chat/backend.py` now accepts `messages` (recommended) in addition to legacy `query`,
-- `web_widget/molsys_ai_widget.js` now keeps conversation history and sends it as `messages` when `mode: "backend"`.
-  This has been validated at the backend level (HTTP requests). Browser/widget integration still needs a real docs site
-  deployment decision (same-origin vs. separate service + CORS).
+- `server/docs_chat/backend.py` now accepts `messages` (recommended) in addition to legacy `query`,
+- `POST /v1/docs-chat` now returns `sources` aligned with citations `[1]`, `[2]`, ... and (when available) deep links to
+  published docs pages under `https://www.uibcdf.org/<tool>/...#Label`,
+- `server/web_widget/molsys_ai_widget.js` now keeps conversation history and sends it as `messages` when `mode: "backend"`.
+  This has been validated end-to-end with a local Sphinx build + CORS (see `docs/index.md` and `dev/smoke_widget.sh`).
+- the widget renders a compact “Sources” dropdown for each assistant reply (using the `sources` field),
+- `docs_chat` supports optional CORS via `MOLSYS_AI_CORS_ORIGINS` (comma-separated), to allow serving docs and backend on
+  different ports during local/widget smoke tests.
+- Sphinx docs build now prefers `myst-nb` (with a fallback to `myst-parser`) and the widget can be toggled to backend mode
+  via query parameters (`molsys_ai_mode` / `molsys_ai_backend_url`) in `docs/_static/molsys_ai_config.js`.
+- Widget end-to-end smoke (Sphinx page → widget → docs_chat → model_server) was validated via CORS preflight + cross-origin
+  POST, retrieving the expected answer (`1VII`). A reproducible runner exists: `dev/smoke_widget.sh`.
+- Public deployment direction: serve docs via GitHub Pages under `https://uibcdf.org/...` and run the API separately under
+  `https://api.uibcdf.org` (DNS `A` record in place). A deployment guide is captured in `dev/DEPLOY_API.md`.
+- If the data-center firewall keeps `80/443` blocked to this GPU host, the fallback path for an external demo is:
+  external VPS + SSH reverse tunnel, documented in `dev/DEPLOY_API.md`.
+- Firewall reality: `80/443` are upstream-filtered by the data-center firewall. A scan shows `8080/tcp` reachable, but a
+  remote request to `http://187.141.21.243:8080/` returns a Tomcat welcome page, so it is not currently usable for the API.
+  For a public demo before `443` is opened, use an external VPS + SSH reverse tunnel (see `dev/DEPLOY_API.md`).
+- Reverse proxy scaffolding is now available in-repo:
+  - Caddy: `dev/Caddyfile.example`
+  - systemd units + env file: `dev/systemd/`, `dev/molsys-ai.env.example`
+
+Tool execution policy and environment separation:
+
+- The **documentation chatbot** is read-only: it answers questions and can generate scripts/snippets, but it does not
+  execute MolSysSuite tools.
+- Tool execution belongs to the **local agent** (`molsys-ai agent`) running on the user's machine.
+- To avoid CUDA dependency conflicts, MolSysSuite toolchains should be installed in a dedicated agent environment
+  (for example a conda env `molsys-agent`), separate from the server-side vLLM inference environment.
+
+RAG corpus automation (live docs repos):
+
+- A reproducible corpus snapshot + index build is available via `dev/sync_rag_corpus.py` (targets sibling repos:
+  `../molsysmt`, `../molsysviewer`, `../pyunitwizard`, `../topomt`).
+- The same script can generate an anchors map (`server/docs_chat/data/anchors.json`) by extracting explicit MyST labels
+  `(Label)=` from `docs/` sources, without running Sphinx or importing upstream packages.
+- The generated corpus and index live under `server/docs_chat/data/` by default and are intentionally ignored by git.
+- An in-process end-to-end smoke (retrieve → prompt → vLLM backend) is available via `dev/smoke_docs_chat_inprocess.py`.
 
 ## 4. Next Steps
 
 The immediate next steps focus on validating the docs chatbot and then iterating on quality:
 
+0.  **Deployment unblock (public demo):**
+    - Send the port-opening request for `443/tcp` (and optionally `80/tcp`) using `dev/FIREWALL_PORT_REQUEST_TEMPLATE.md`.
+    - Until `443` is opened, use the external VPS + SSH reverse tunnel path in `dev/DEPLOY_API.md`.
+    - Once `443` is opened, deploy with Caddy + systemd using `dev/RUNBOOK_DEPLOY_443.md`.
 1.  **Widget integration smoke:** Run `model_server` (vLLM) + `docs_chat` together and verify that the web widget (Sphinx)
-    can talk to `POST /v1/docs-chat` in multi-turn mode (`messages` history).
+    can talk to `POST /v1/docs-chat` in multi-turn mode (`messages` history), returning answers that cite `[1]`, `[2]` and
+    sources that deep-link into `https://www.uibcdf.org/<tool>/...#Label`.
 2.  **Docs deployment integration:** Decide how the widget and backend will be deployed for real docs sites (same-origin vs
     separate service; CORS; rate-limiting if needed).
+    - Keep `model_server` (`/v1/chat`) bound to localhost; expose `docs_chat` (`/v1/docs-chat`) for CLI + widget, with API keys
+      and rate limiting as needed.
 3.  **Improve RAG quality:**
     - **Prompt Engineering:** Refine the prompt sent to the LLM to make more effective use of the documentation context.
-    - **Chunking:** Evaluate and improve the document splitting strategy (`chunking`) in `rag/build_index.py`.
+    - **Chunking:** Evaluate and improve the document splitting strategy (`chunking`) in `server/rag/build_index.py`.
 4.  **Benchmarking suite:** Implement benchmark tasks (ADR-011/017) to evaluate changes in retrieval/prompting/models.
-5.  **Expand agent tools:**
-    - Begin implementing new real tools from the `molsysmt` ecosystem in `agent/tools/`, following the `ROADMAP.md` and ADRs.
+5.  **Expand local agent tools (client-side):**
+    - Keep tool execution local-only (`molsys-ai agent`), and avoid server environments importing MolSysSuite toolchains.
+    - Begin implementing new tools from the `molsysmt` ecosystem in `client/agent/tools/`, following the `ROADMAP.md` and ADRs.
 6.  **Multi-GPU note (optional):** Only if we need more context or larger models, test `tensor_parallel_size=3` across the
     3× RTX 2080 Ti GPUs.
 7.  **Prepare fine-tuning dataset (Roadmap v0.5):**

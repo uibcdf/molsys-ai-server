@@ -13,24 +13,55 @@ authors = [
   { name = "UIBCDF" }
 ]
 dependencies = [
-  "fastapi",
-  "uvicorn",
-  "pydantic",
-  "rich",
   "requests",
-  "PyYAML",
-  "numpy",
-  "sentence-transformers",
 ]
 
 [project.optional-dependencies]
+cli = [
+  "rich",
+]
+server = [
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "PyYAML",
+  "numpy",
+]
+rag = [
+  "numpy",
+  "sentence-transformers",
+]
+docs = [
+  "sphinx",
+  "myst-nb",
+  "pydata-sphinx-theme",
+]
 dev = [
   "pytest",
   "pytest-mock",
   "ruff",
   "mypy",
+  "rich",
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "PyYAML",
+  "numpy",
+  "sentence-transformers",
   "sphinx",
-  "myst-parser",
+  "myst-nb",
+  "pydata-sphinx-theme",
+]
+all = [
+  "rich",
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "PyYAML",
+  "numpy",
+  "sentence-transformers",
+  "sphinx",
+  "myst-nb",
   "pydata-sphinx-theme",
 ]
 
@@ -41,7 +72,7 @@ molsys-ai = "cli.main:main"
 include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["client", "server"]
 include = [
   "agent",
   "agent.*",

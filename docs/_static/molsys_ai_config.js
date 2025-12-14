@@ -7,6 +7,43 @@ window.molsysAiChatConfig = window.molsysAiChatConfig || {
   // "backend": call the docs-chat backend and show its responses.
   mode: "placeholder",
   // By default, talk to a docs-chat backend on the same origin.
+  // If you serve docs under `uibcdf.org` and the API under `api.uibcdf.org`,
+  // override this (or use the query-param toggles below).
   backendUrl: window.location.origin.replace(/\/+$/, "") + "/v1/docs-chat",
+  // Optional API key for docs-chat (only useful if the backend is configured to require it).
+  // Note: if you set this in public docs pages, treat it as a public/low-privilege key.
+  apiKey: "",
 };
 
+// Convenience toggles for local smoke tests (no rebuild required):
+//
+// - URL param:   ?molsys_ai_mode=backend
+// - URL param:   ?molsys_ai_backend_url=http://127.0.0.1:8000/v1/docs-chat
+// - localStorage: localStorage.setItem("molsysAiChatMode", "backend")
+//
+// When serving docs and backend on different ports, you may need CORS on the
+// backend (see `MOLSYS_AI_CORS_ORIGINS` in `server/docs_chat/README.md`).
+(function () {
+  try {
+    // If we are on the public docs domain, default to the public API domain.
+    // This avoids requiring per-site config for `/molsysmt`, `/molsysviewer`, etc.
+    if (window.location && window.location.hostname && window.location.hostname.endsWith("uibcdf.org")) {
+      window.molsysAiChatConfig.backendUrl = "https://api.uibcdf.org/v1/docs-chat";
+    }
+
+    const params = new URLSearchParams(window.location.search || "");
+    const forcedMode =
+      params.get("molsys_ai_mode") || window.localStorage.getItem("molsysAiChatMode");
+    const forcedUrl =
+      params.get("molsys_ai_backend_url") || window.localStorage.getItem("molsysAiChatBackendUrl");
+
+    if (forcedMode) {
+      window.molsysAiChatConfig.mode = forcedMode;
+    }
+    if (forcedUrl) {
+      window.molsysAiChatConfig.backendUrl = forcedUrl;
+    }
+  } catch (e) {
+    // Ignore configuration errors; keep defaults.
+  }
+})();

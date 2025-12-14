@@ -1,0 +1,28 @@
+[Unit]
+Description=MolSys-AI RAG corpus refresh (sync + rebuild index + restart docs_chat)
+After=network.target
+
+[Service]
+Type=oneshot
+# Adjust to your repo checkout path.
+WorkingDirectory=/opt/molsys-ai-server
+EnvironmentFile=/etc/molsys-ai/molsys-ai.env
+
+# This assumes the MolSysSuite repos are checked out as siblings of this repo
+# (../molsysmt, ../molsysviewer, ../pyunitwizard, ../topomt).
+#
+# If you set MOLSYS_AI_DOCS_DIR / MOLSYS_AI_DOCS_INDEX in the env file, this
+# unit will use those paths. Otherwise it falls back to repo defaults.
+ExecStart=/bin/bash -lc '\
+  set -euo pipefail; \
+  DOCS_DIR="${MOLSYS_AI_DOCS_DIR:-server/docs_chat/data/docs}"; \
+  INDEX_PATH="${MOLSYS_AI_DOCS_INDEX:-server/docs_chat/data/rag_index.pkl}"; \
+  /opt/molsys-ai-server/.venv/bin/python dev/sync_rag_corpus.py --clean --build-index --dest "$DOCS_DIR" --index "$INDEX_PATH" \
+'
+
+# Reload docs_chat so it picks up the new index (index is loaded on startup).
+ExecStartPost=/bin/systemctl restart molsys-ai-docs-chat
+
+[Install]
+WantedBy=multi-user.target
+

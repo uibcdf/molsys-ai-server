@@ -13,7 +13,7 @@ For the overarching design, see `dev/decisions/ADR-013.md`.
 
 ## 1. Basic chat from a notebook
 
-Helpers live in `agent/notebook.py`:
+Helpers live in `client/agent/notebook.py`:
 
 - `create_notebook_agent(server_url: str | None = None, use_planner: bool = True)`
 - `NotebookChatSession`
@@ -49,7 +49,7 @@ MolSysMT, TopoMT, MolSysViewer), the recommended pattern is:
 3. Write a new `.ipynb` file to disk.
 4. Open and execute the new notebook manually.
 
-The helpers in `agent/notebook.py` provide:
+The helpers in `client/agent/notebook.py` provide:
 
 - `NotebookCellSpec(cell_type: str, source: str)`
 - `create_workflow_notebook(cells, output_path) -> Path`
@@ -88,7 +88,7 @@ production use cases.
 
 ## 3. In-place editing (placeholder, advanced)
 
-There is a placeholder function in `agent/notebook.py`:
+There is a placeholder function in `client/agent/notebook.py`:
 
 - `inject_workflow_into_current_notebook(*args, **kwargs) -> None`
 
@@ -131,4 +131,3 @@ Future work around notebook integration may include:
   - automatic workflow notebook generation for real MolSys* tasks.
 - Experimenting with JupyterLab/VS Code APIs to implement a safe and
   auditable `inject_workflow_into_current_notebook` for advanced users.
-

@@ -65,8 +65,16 @@ env/
 # RAG generated index
 data/rag_index.pkl
 
+# Sphinx build outputs
+docs/_build/
+
 # Model server configuration (can contain sensitive info, typically managed outside VCS)
-model_server/config.yaml
+server/model_server/config.yaml
+
+# docs_chat generated corpus + index (snapshotted from sibling repos)
+server/docs_chat/data/docs/
+server/docs_chat/data/rag_index.pkl
+server/docs_chat/data/anchors.json
 
 # Temporary build script
 _build_index_script.py
@@ -74,3 +82,6 @@ _build_index_script.py
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 /models/
+
+# Codex CLI session artifacts
+codex_session.sh

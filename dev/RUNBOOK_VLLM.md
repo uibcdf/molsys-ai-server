@@ -34,6 +34,35 @@ pip install -U pip
 pip install vllm --extra-index-url https://download.pytorch.org/whl/cu129
 ```
 
+Install the MolSys-AI server dependencies (from this repo):
+
+```bash
+pip install -e ".[server]"
+```
+
+If you want to run the docs chatbot backend (`server/docs_chat/`) with retrieval,
+also install the RAG dependencies:
+
+```bash
+pip install -e ".[rag]"
+```
+
+### Note (some HPC environments): `conda` plugins may fail
+
+On some systems you may see a `PermissionError` from `multiprocessing.SemLock`
+while running `conda` commands (often triggered by CUDA virtual package
+plugins). In that case run conda with plugins disabled:
+
+```bash
+export CONDA_NO_PLUGINS=true
+```
+
+or:
+
+```bash
+conda --no-plugins <command> ...
+```
+
 Sanity check:
 
 ```bash
@@ -109,7 +138,7 @@ Create a YAML config file (example path: `/tmp/molsys_ai_vllm.yaml`):
 ```yaml
 model:
   backend: "vllm"
-  local_path: "/ABS/PATH/TO/molsys-ai/models/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
+  local_path: "/ABS/PATH/TO/molsys-ai-server/models/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
   quantization: "awq"
   tensor_parallel_size: 1
 
@@ -151,6 +180,13 @@ hits the API, and cleans up on exit):
 
 This script includes a small multi-turn request to validate that the chat
 template is applied.
+
+### 6.0 Optional API key protection
+
+For deployments where `/v1/chat` is protected, set:
+
+- `MOLSYS_AI_CHAT_API_KEYS` on the server (comma-separated allowlist),
+- `MOLSYS_AI_CHAT_API_KEY` on the client side to send `Authorization: Bearer ...`.
 
 ### 6.1 Minimal generation
 

@@ -1,0 +1,26 @@
+[Unit]
+Description=MolSys-AI model server (vLLM)
+After=network.target
+
+[Service]
+Type=simple
+# Adjust to your repo checkout path.
+WorkingDirectory=/opt/molsys-ai-server
+EnvironmentFile=/etc/molsys-ai/molsys-ai.env
+
+# Choose ONE of the following ExecStart styles and update paths accordingly:
+#
+# Option A (recommended): venv-local python
+# ExecStart=/opt/molsys-ai-server/.venv/bin/python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips=127.0.0.1
+#
+# Option B: conda env python (example)
+# ExecStart=/fast_data/home/diego/miniconda3/envs/vllm/bin/python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips=127.0.0.1
+#
+# Keep the placeholder below consistent with your chosen option.
+ExecStart=/opt/molsys-ai-server/.venv/bin/python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips=127.0.0.1
+
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

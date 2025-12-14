@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule MolSys-AI RAG corpus refresh
+
+[Timer]
+# Run weekly. Adjust as needed (e.g. monthly, daily, etc.).
+OnCalendar=weekly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

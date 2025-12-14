@@ -33,6 +33,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${ROOT_DIR}/server:${ROOT_DIR}/client:${PYTHONPATH:-}"
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8001}"
@@ -100,7 +101,6 @@ require_cmd python
 require_cmd curl
 require_cmd uvicorn
 require_cmd grep
-require_cmd ss
 require_cmd pgrep
 
 export HOST PORT CUDA_VISIBLE_DEVICES
@@ -154,17 +154,32 @@ if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi --query-compute-apps=pid,used_memory,name --format=csv,noheader,nounits 2>/dev/null || true
 fi
 
-# Refuse to run if the port is already in use.
-if ss -ltn 2>/dev/null | grep -Eq ":${PORT}(\\s|$)"; then
-  echo "[smoke] Port ${PORT} is already in use. Stop the running server first." >&2
-  exit 1
-fi
+# Refuse to run if the port is already in use (avoid relying on `ss`, which may
+# be restricted in some sandboxed environments).
+python - <<'PY'
+import os
+import socket
+import sys
+
+host = os.environ.get("HOST", "127.0.0.1")
+port = int(os.environ.get("PORT", "8001"))
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind((host, port))
+except OSError:
+    print(f"[smoke] Port {port} is already in use. Stop the running server first.", file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    s.close()
+PY
 
 rm -f "${LOG_PATH}"
 
 echo "[smoke] starting server on ${HOST}:${PORT} (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES})"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
 MOLSYS_AI_MODEL_CONFIG="${CONFIG_PATH}" \
+MOLSYS_AI_CHAT_API_KEYS="${MOLSYS_AI_CHAT_API_KEYS:-}" \
 uvicorn model_server.server:app --host "${HOST}" --port "${PORT}" >"${LOG_PATH}" 2>&1 &
 UVICORN_PID=$!
 
@@ -183,6 +198,11 @@ if ! curl -fsS "http://${HOST}:${PORT}/docs" >/dev/null 2>&1; then
   exit 1
 fi
 
+AUTH_HEADER=()
+if [[ -n "${MOLSYS_AI_CHAT_API_KEY:-}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${MOLSYS_AI_CHAT_API_KEY}")
+fi
+
 post_chat() {
   local payload="$1"
   local out_path="$2"
@@ -190,6 +210,7 @@ post_chat() {
   code="$(curl -sS -o "${out_path}" -w '%{http_code}' \
     -X POST "http://${HOST}:${PORT}/v1/chat" \
     -H 'Content-Type: application/json' \
+    "${AUTH_HEADER[@]}" \
     -d "${payload}" || true)"
   if [[ "${code}" != "200" ]]; then
     echo "[smoke] /v1/chat failed (HTTP ${code}). Tail log:" >&2
@@ -239,7 +260,11 @@ Question: Confirm you read the excerpts.
 
 payload = {"messages": [{"role": "user", "content": prompt}]}
 data = json.dumps(payload).encode("utf-8")
-req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+headers = {"Content-Type": "application/json"}
+api_key = (os.environ.get("MOLSYS_AI_CHAT_API_KEY") or "").strip()
+if api_key:
+    headers["Authorization"] = f"Bearer {api_key}"
+req = urllib.request.Request(url, data=data, headers=headers)
 with urllib.request.urlopen(req, timeout=1800) as resp:
     obj = json.loads(resp.read().decode("utf-8"))
 print("[smoke] long prompt response:", obj.get("content", "")[:120].replace("\n", " "))

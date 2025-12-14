@@ -1,19 +1,22 @@
-# MolSys-AI — Agent Working Guide
+# MolSys-AI Server — Agent Working Guide
 
 This file is the single source of truth for how to work in this repository.
 Start here.
 
 ## Project summary
 
-MolSys-AI is an AI assistant project for the UIBCDF MolSys* ecosystem (MolSysMT,
+This repository hosts the server-side components of MolSys-AI for the UIBCDF MolSys* ecosystem (MolSysMT,
 MolSysViewer, TopoMT, and related tools). The repository contains:
 
-- an MVP agent loop (`agent/`),
-- a model server (`model_server/`),
-- a RAG layer (`rag/`),
-- a docs chatbot backend + widget (`docs_chat/`, `web_widget/`),
+- client-side code intended to be split out later (`client/agent/`, `client/cli/`),
+- server-side services (`server/model_server/`, `server/docs_chat/`, `server/rag/`),
+- a docs widget asset (`server/web_widget/`),
 - internal design docs and ADRs (`dev/`),
 - training placeholders (`train/`).
+
+Note: the Python distribution installed by users remains `molsys-ai` (CLI-first).
+This repository is the server-side codebase and is expected to live as `molsys-ai-server`
+when the CLI/agent is split out.
 
 ## Language policy
 
@@ -27,17 +30,28 @@ MolSys-AI uses two complementary environment tracks:
 1. **General development** (code + docs + tests): use `environment.yml`.
 2. **Inference (vLLM)**: use the runbook in `dev/RUNBOOK_VLLM.md`.
 
+Note: on some HPC systems, `conda` plugins can fail with `PermissionError`
+(`multiprocessing.SemLock`). If this happens, run:
+
+- `export CONDA_NO_PLUGINS=true`
+
 ### 1) General development (`environment.yml`)
 
 - Intended for: development, docs builds, unit/smoke tests.
 - After activating the environment, install the project in editable mode:
-  - `pip install -e .`
-  - or `pip install -e ".[dev]"` for lint/test/docs tooling.
+  - `pip install -e .` (CLI-only dependencies)
+  - `pip install -e ".[dev]"` for server/RAG/docs/test tooling.
+  - the docs build prefers `myst-nb` (with a fallback to `myst-parser`).
 
 Local MolSys* dependencies (`molsysmt`, `molsysviewer`, `topomt`, etc.) may be
 developed in sibling repos. Keep them commented out in `environment.yml` if you
 install them manually from source, to avoid overwriting your dev versions with
 Conda channel installs.
+
+If you need local tool execution (MolSysSuite tools), prefer a dedicated agent
+environment (for example: `conda create -n molsys-agent ...`) and install
+`molsys-ai` there. Avoid installing MolSysSuite toolchains into the vLLM inference
+environment used for the server.
 
 ### 2) Inference (vLLM)
 
@@ -72,6 +86,11 @@ For a reproducible, single-GPU vLLM smoke test (including a small multi-turn
 check), use:
 
 - `./dev/smoke_vllm.sh`
+
+For the Sphinx widget end-to-end smoke (docs → widget → docs_chat → model_server),
+use:
+
+- `./dev/smoke_widget.sh`
 
 Note: vLLM may spawn a `VLLM::EngineCore` process; if a crash leaves GPU memory
 allocated, kill the stray process before retrying.
@@ -115,7 +134,20 @@ See `tests/test_smoke.py` for the reference pattern.
 - ADRs: `dev/decisions/`
 - Status handoff: `checkpoint.md`
 - vLLM runbook: `dev/RUNBOOK_VLLM.md`
-- Docs chatbot backend: `docs_chat/README.md`
+- Docs chatbot backend: `server/docs_chat/README.md`
+- Sphinx widget pilot: `docs/index.md`
+- API deployment: `dev/DEPLOY_API.md`
+- Caddy + systemd examples: `dev/Caddyfile.example`, `dev/systemd/`, `dev/molsys-ai.env.example`
+- 443 deployment runbook: `dev/RUNBOOK_DEPLOY_443.md`
+- API stability contract: `dev/API_CONTRACT_V1.md`
+
+## Public API authentication (current policy)
+
+- `POST /v1/docs-chat` is intended for the public docs widget (CORS-enabled).
+  - It can be optionally protected with `MOLSYS_AI_DOCS_CHAT_API_KEYS` if needed.
+- `POST /v1/chat` is intended for CLI / non-browser clients and should be protected in production:
+  - set `MOLSYS_AI_CHAT_API_KEYS` on the model server,
+  - set `MOLSYS_AI_MODEL_SERVER_API_KEY` on docs_chat so it can call `/v1/chat`.
 
 ## Large files (do not read)
 
@@ -133,3 +165,5 @@ locally downloaded model weights under `models/` via Hugging Face + git-lfs).
 The same applies to other large artifacts such as:
 
 - `data/rag_index.pkl` (generated RAG index)
+- `server/docs_chat/data/docs/` (generated corpus snapshot; thousands of files)
+- `server/docs_chat/data/rag_index.pkl` (generated docs RAG index)
