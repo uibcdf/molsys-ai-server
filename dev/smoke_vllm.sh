@@ -179,7 +179,7 @@ rm -f "${LOG_PATH}"
 echo "[smoke] starting server on ${HOST}:${PORT} (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES})"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
 MOLSYS_AI_MODEL_CONFIG="${CONFIG_PATH}" \
-MOLSYS_AI_CHAT_API_KEYS="${MOLSYS_AI_CHAT_API_KEYS:-}" \
+MOLSYS_AI_ENGINE_API_KEYS="${MOLSYS_AI_ENGINE_API_KEYS:-}" \
 uvicorn model_server.server:app --host "${HOST}" --port "${PORT}" >"${LOG_PATH}" 2>&1 &
 UVICORN_PID=$!
 
@@ -199,25 +199,25 @@ if ! curl -fsS "http://${HOST}:${PORT}/docs" >/dev/null 2>&1; then
 fi
 
 AUTH_HEADER=()
-if [[ -n "${MOLSYS_AI_CHAT_API_KEY:-}" ]]; then
-  AUTH_HEADER=(-H "Authorization: Bearer ${MOLSYS_AI_CHAT_API_KEY}")
+if [[ -n "${MOLSYS_AI_ENGINE_API_KEY:-}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${MOLSYS_AI_ENGINE_API_KEY}")
 fi
 
 post_chat() {
   local payload="$1"
-  local out_path="$2"
-  local code
-  code="$(curl -sS -o "${out_path}" -w '%{http_code}' \
-    -X POST "http://${HOST}:${PORT}/v1/chat" \
-    -H 'Content-Type: application/json' \
-    "${AUTH_HEADER[@]}" \
-    -d "${payload}" || true)"
-  if [[ "${code}" != "200" ]]; then
-    echo "[smoke] /v1/chat failed (HTTP ${code}). Tail log:" >&2
-    tail -n 200 "${LOG_PATH}" >&2 || true
-    if command -v nvidia-smi >/dev/null 2>&1; then
-      echo "[smoke] nvidia-smi (processes):" >&2
-      nvidia-smi --query-compute-apps=pid,used_memory,name --format=csv,noheader,nounits 2>/dev/null >&2 || true
+	  local out_path="$2"
+	  local code
+	  code="$(curl -sS -o "${out_path}" -w '%{http_code}' \
+	    -X POST "http://${HOST}:${PORT}/v1/engine/chat" \
+	    -H 'Content-Type: application/json' \
+	    "${AUTH_HEADER[@]}" \
+	    -d "${payload}" || true)"
+	  if [[ "${code}" != "200" ]]; then
+	    echo "[smoke] /v1/engine/chat failed (HTTP ${code}). Tail log:" >&2
+	    tail -n 200 "${LOG_PATH}" >&2 || true
+	    if command -v nvidia-smi >/dev/null 2>&1; then
+	      echo "[smoke] nvidia-smi (processes):" >&2
+	      nvidia-smi --query-compute-apps=pid,used_memory,name --format=csv,noheader,nounits 2>/dev/null >&2 || true
     fi
     return 1
   fi
@@ -243,7 +243,7 @@ import urllib.request
 
 host = os.environ.get("HOST", "127.0.0.1")
 port = int(os.environ.get("PORT", "8001"))
-url = f"http://{host}:{port}/v1/chat"
+url = f"http://{host}:{port}/v1/engine/chat"
 
 prompt = textwrap.dedent("""
 You are a documentation assistant.
@@ -261,7 +261,7 @@ Question: Confirm you read the excerpts.
 payload = {"messages": [{"role": "user", "content": prompt}]}
 data = json.dumps(payload).encode("utf-8")
 headers = {"Content-Type": "application/json"}
-api_key = (os.environ.get("MOLSYS_AI_CHAT_API_KEY") or "").strip()
+api_key = (os.environ.get("MOLSYS_AI_ENGINE_API_KEY") or "").strip()
 if api_key:
     headers["Authorization"] = f"Bearer {api_key}"
 req = urllib.request.Request(url, data=data, headers=headers)

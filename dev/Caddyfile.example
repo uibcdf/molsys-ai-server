@@ -9,11 +9,11 @@ api.uibcdf.org {
   encode zstd gzip
 
   # Minimal endpoint routing:
-  # - /v1/docs-chat is for the public docs widget (CORS is handled by docs_chat).
-  # - The model server (/v1/chat) stays on localhost; docs_chat calls it internally.
-  reverse_proxy /v1/docs-chat* 127.0.0.1:8000
+  # - /v1/chat is the public chat API (widget + CLI).
+  # - The model engine server (/v1/engine/chat) stays on localhost; chat_api calls it internally.
+  reverse_proxy /v1/chat* 127.0.0.1:8000
 
-  # Optional: expose OpenAPI for docs_chat only (useful for debugging).
+  # Optional: expose OpenAPI for chat_api only (useful for debugging).
   reverse_proxy /docs* 127.0.0.1:8000
   reverse_proxy /openapi.json 127.0.0.1:8000
 
@@ -22,7 +22,7 @@ api.uibcdf.org {
 
   # Optional: pass-through health endpoints for internal services.
   # These are useful for monitoring and smoke tests.
-  handle_path /healthz/docs-chat* {
+  handle_path /healthz/chat* {
     rewrite * /healthz
     reverse_proxy 127.0.0.1:8000
   }

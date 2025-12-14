@@ -86,35 +86,35 @@ but it must never replace the literal snapshot; it is an additive layer.
     source file (default: 3). Tune with `MOLSYS_AI_RAG_MAX_CHUNKS_PER_SOURCE`.
   - Returns up to `k` documents ordered by similarity.
 
-- The `docs_chat` backend (`server/docs_chat/backend.py`) calls `build_index(...)`
+- The chat API (`server/chat_api/backend.py`) calls `build_index(...)`
   automatically on startup:
-  - By default it looks for `.md` files under `server/docs_chat/data/docs`.
+  - By default it looks for `.md` files under `server/chat_api/data/docs`.
   - You can override the source directory with the environment variable
     `MOLSYS_AI_DOCS_DIR`.
   - `MOLSYS_AI_DOCS_INDEX` controls where the pickled index is stored.
 
 To experiment quickly:
 
-1. Place a few `.md` documents under `server/docs_chat/data/docs` (or set
+1. Place a few `.md` documents under `server/chat_api/data/docs` (or set
    `MOLSYS_AI_DOCS_DIR` to another directory).
-2. Run the docs-chat backend, e.g.:
+2. Run the chat API, e.g.:
 
    ```bash
-   uvicorn docs_chat.backend:app --reload
+   uvicorn chat_api.backend:app --reload
    ```
 
 3. Ensure the model server is running (stub or real) on
-   `http://127.0.0.1:8001` (or set `MOLSYS_AI_MODEL_SERVER_URL`).
+   `http://127.0.0.1:8001` (or set `MOLSYS_AI_ENGINE_URL`).
 
 4. Call the endpoint:
 
    ```bash
-   curl -X POST http://127.0.0.1:8000/v1/docs-chat \
+   curl -X POST http://127.0.0.1:8000/v1/chat \
         -H "Content-Type: application/json" \
         -d '{"query": "MolSysMT", "k": 5}'
    ```
 
-The docs-chat backend will:
+The chat API will:
 - build an embedding index from the `.md` documents,
 - retrieve simple matches for the query via `rag.retriever.retrieve`,
 - send a prompt with the retrieved excerpts to the configured model server,

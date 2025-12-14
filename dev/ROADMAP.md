@@ -20,7 +20,7 @@ This roadmap focuses on getting a **usable MVP** while keeping the architecture 
   - send it to a model endpoint (can be a stub or a tiny model)
   - return the answer
 - Implement `server/model_server/server.py`:
-  - FastAPI app with a `/v1/chat` endpoint.
+  - FastAPI app with a `/v1/engine/chat` endpoint.
   - For MVP, it can echo or use a very small local model.
 - Wire the CLI to the agent and the agent to the model server.
 
@@ -38,7 +38,7 @@ This roadmap focuses on getting a **usable MVP** while keeping the architecture 
 
 ## v0.4 – Documentation chatbot backend + widget
 
-- Implement `server/docs_chat/backend.py`:
+- Implement `server/chat_api/backend.py`:
   - FastAPI endpoint for documentation Q&A.
   - Use RAG + model server to answer questions.
   - Add an LLM router path so the CLI can use the same endpoint with:

@@ -12,33 +12,33 @@ def _reload_model_server():
 
 
 def test_model_server_chat_open_by_default(monkeypatch):
-    monkeypatch.delenv("MOLSYS_AI_CHAT_API_KEYS", raising=False)
+    monkeypatch.delenv("MOLSYS_AI_ENGINE_API_KEYS", raising=False)
     server = _reload_model_server()
 
     client = TestClient(server.app)
-    resp = client.post("/v1/chat", json={"messages": [{"role": "user", "content": "hello"}]})
+    resp = client.post("/v1/engine/chat", json={"messages": [{"role": "user", "content": "hello"}]})
     assert resp.status_code == 200
     assert "content" in resp.json()
 
 
 def test_model_server_chat_requires_api_key_when_configured(monkeypatch):
-    monkeypatch.setenv("MOLSYS_AI_CHAT_API_KEYS", "k1,k2")
+    monkeypatch.setenv("MOLSYS_AI_ENGINE_API_KEYS", "k1,k2")
     server = _reload_model_server()
 
     client = TestClient(server.app)
     payload = {"messages": [{"role": "user", "content": "hello"}]}
 
-    resp = client.post("/v1/chat", json=payload)
+    resp = client.post("/v1/engine/chat", json=payload)
     assert resp.status_code == 401
 
-    resp = client.post("/v1/chat", json=payload, headers={"Authorization": "Bearer k2"})
+    resp = client.post("/v1/engine/chat", json=payload, headers={"Authorization": "Bearer k2"})
     assert resp.status_code == 200
 
-    resp = client.post("/v1/chat", json=payload, headers={"X-API-Key": "k1"})
+    resp = client.post("/v1/engine/chat", json=payload, headers={"X-API-Key": "k1"})
     assert resp.status_code == 200
 
 
-def _reload_docs_chat(monkeypatch, tmp_path):
+def _reload_chat_api(monkeypatch, tmp_path):
     monkeypatch.setenv("MOLSYS_AI_EMBEDDINGS", "hashing")
     monkeypatch.setenv("MOLSYS_AI_DOCS_DIR", str(tmp_path / "docs"))
     monkeypatch.setenv("MOLSYS_AI_DOCS_INDEX", str(tmp_path / "rag_index.pkl"))
@@ -46,16 +46,16 @@ def _reload_docs_chat(monkeypatch, tmp_path):
     (tmp_path / "docs").mkdir(parents=True, exist_ok=True)
     (tmp_path / "docs" / "example.md").write_text("# Example\n\nHello.\n", encoding="utf-8")
 
-    import docs_chat.backend as backend
+    import chat_api.backend as backend
 
     importlib.reload(backend)
     return backend
 
 
-def test_docs_chat_can_be_protected_with_api_keys(monkeypatch, mocker, tmp_path):
-    backend = _reload_docs_chat(monkeypatch, tmp_path)
+def test_chat_api_can_be_protected_with_api_keys(monkeypatch, mocker, tmp_path):
+    backend = _reload_chat_api(monkeypatch, tmp_path)
 
-    monkeypatch.setenv("MOLSYS_AI_DOCS_CHAT_API_KEYS", "doc-key")
+    monkeypatch.setenv("MOLSYS_AI_CHAT_API_KEYS", "chat-key")
     importlib.reload(backend)
 
     mocker.patch.object(backend.HTTPModelClient, "generate", return_value="ok")
@@ -63,10 +63,9 @@ def test_docs_chat_can_be_protected_with_api_keys(monkeypatch, mocker, tmp_path)
     client = TestClient(backend.app)
     payload = {"query": "hi", "k": 1}
 
-    resp = client.post("/v1/docs-chat", json=payload)
+    resp = client.post("/v1/chat", json=payload)
     assert resp.status_code == 401
 
-    resp = client.post("/v1/docs-chat", json=payload, headers={"Authorization": "Bearer doc-key"})
+    resp = client.post("/v1/chat", json=payload, headers={"Authorization": "Bearer chat-key"})
     assert resp.status_code == 200
     assert resp.json()["answer"] == "ok"
-

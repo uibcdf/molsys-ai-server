@@ -1,7 +1,7 @@
 
-"""FastAPI-based model server for MolSys-AI (MVP skeleton).
+"""FastAPI-based model engine server for MolSys-AI (MVP skeleton).
 
-The server exposes a `/v1/chat` endpoint and can be configured to use:
+The server exposes a `/v1/engine/chat` endpoint and can be configured to use:
 
 - a simple stub backend that echoes the last user message, or
 - (in the future) a real backend powered by llama.cpp or other engines.
@@ -32,7 +32,7 @@ app = FastAPI(title="MolSys-AI Model Server (MVP)")
 
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
 _CONFIG_ENV_VAR = "MOLSYS_AI_MODEL_CONFIG"
-_CHAT_KEYS_ENV_VAR = "MOLSYS_AI_CHAT_API_KEYS"
+_CHAT_KEYS_ENV_VAR = "MOLSYS_AI_ENGINE_API_KEYS"
 
 
 class Message(BaseModel):
@@ -41,9 +41,9 @@ class Message(BaseModel):
 
 
 class GenerationParams(BaseModel):
-    """Optional generation controls for `/v1/chat`.
+    """Optional generation controls for `/v1/engine/chat`.
 
-    These fields are optional to keep `/v1/chat` stable while still enabling
+    These fields are optional to keep `/v1/engine/chat` stable while still enabling
     deterministic sub-calls (for example router/classifier prompts).
     """
 
@@ -391,10 +391,10 @@ def _parse_api_keys(raw: str) -> Set[str]:
 
 @lru_cache()
 def get_chat_api_keys() -> Set[str]:
-    """Return accepted API keys for `/v1/chat`.
+    """Return accepted API keys for `/v1/engine/chat`.
 
     Behavior:
-    - If `MOLSYS_AI_CHAT_API_KEYS` is empty/unset: endpoint is open (dev default).
+    - If `MOLSYS_AI_ENGINE_API_KEYS` is empty/unset: endpoint is open (dev default).
     - If set: the request must include either:
       - `Authorization: Bearer <key>`, or
       - `X-API-Key: <key>`.
@@ -422,11 +422,7 @@ def require_chat_api_key(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
 
 
-@app.post(
-    "/v1/chat",
-    response_model=ChatResponse,
-    dependencies=[Depends(require_chat_api_key)],
-)
+@app.post("/v1/engine/chat", response_model=ChatResponse, dependencies=[Depends(require_chat_api_key)])
 async def chat(req: ChatRequest) -> ChatResponse:
     """Chat endpoint backed by the configured model backend."""
 

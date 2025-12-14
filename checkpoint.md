@@ -51,29 +51,30 @@ Significant progress has been made in establishing the inference stack with GPU 
   - `CUDA_HOME=/usr/local/cuda`
   - `PATH=$CUDA_HOME/bin:$PATH`
   This is required for FlashInfer JIT compilation.
-- **Single-GPU inference:** `model_server` + vLLM successfully loads the model and answers `/v1/chat`.
-- **Multi-turn chat support:** the vLLM backend now applies the model chat template (via `transformers`), so `/v1/chat`
+- **Single-GPU inference:** `model_server` + vLLM successfully loads the model and answers `POST /v1/engine/chat`.
+- **Multi-turn chat support:** the vLLM backend now applies the model chat template (via `transformers`), so `POST /v1/engine/chat`
   accepts full `messages` history (not just the last user prompt).
 - **Stable baseline config (11 GB GPU):**
   - `max_model_len=8192`
   - `gpu_memory_utilization=0.80`
   - `enforce_eager=true` (stability-first; avoids OOM during compilation/warmup)
   - Observed VRAM usage during long-prompt tests: ~9.4–9.8 GiB on GPU0.
-- **Reproducible smoke runner:** `dev/smoke_vllm.sh` starts the server, performs minimal + multi-turn requests, and
+- **Reproducible smoke runner:** `dev/smoke_vllm.sh` starts the server, performs minimal + multi-turn requests against `POST /v1/engine/chat`, and
   cleans up on exit (including best-effort cleanup of any stray `VLLM::EngineCore` processes).
-- **Docs chatbot end-to-end (backend):** validated `docs_chat` → `model_server`:
-  - `POST /v1/docs-chat` with legacy `query` returns `OK`,
-  - `POST /v1/docs-chat` with `messages` history preserves context (multi-turn) and returns `Diego` in the test.
-- **RAG embeddings validation:** `docs_chat` was also validated with `sentence-transformers` installed (v5.2.0), building a
+- **Chat API end-to-end (backend):** validated `chat_api` → `model_server`:
+  - `POST /v1/chat` with legacy `query` returns `OK`,
+  - `POST /v1/chat` with `messages` history preserves context (multi-turn) and returns `Diego` in the test.
+- **API naming cleanup:** public endpoint is `POST /v1/chat`; internal engine endpoint is `POST /v1/engine/chat` (no legacy `/v1/docs-chat` naming).
+- **RAG embeddings validation:** `chat_api` was also validated with `sentence-transformers` installed (v5.2.0), building a
   small Markdown index and answering a retrieval-backed question correctly (example: returns `1VII` for a synthetic doc).
 - **API authentication policy (production-ready):**
-  - `POST /v1/chat` (internal model backend) can be protected with `MOLSYS_AI_CHAT_API_KEYS` (API key allowlist).
-  - `docs_chat` can authenticate to the model server via `MOLSYS_AI_MODEL_SERVER_API_KEY`.
-  - `POST /v1/docs-chat` is public by default, but can be protected with `MOLSYS_AI_DOCS_CHAT_API_KEYS` if needed.
-  - Smoke scripts support optional API keys via environment variables.
+  - `POST /v1/engine/chat` (internal model backend) can be protected with `MOLSYS_AI_ENGINE_API_KEYS` (API key allowlist).
+  - `chat_api` can authenticate to the model server via `MOLSYS_AI_ENGINE_API_KEY`.
+  - `POST /v1/chat` is public by default, but can be protected with `MOLSYS_AI_CHAT_API_KEYS` if needed.
+  - Smoke scripts support optional API keys via `MOLSYS_AI_ENGINE_API_KEYS` / `MOLSYS_AI_ENGINE_API_KEY` (engine) and `MOLSYS_AI_CHAT_API_KEYS` / `MOLSYS_AI_CHAT_API_KEY` (chat API).
 - **CLI direction (public + lab users):**
   - The CLI is now an HTTP API client with subcommands: `login`, `chat`, `docs`.
-  - `molsys-ai chat` calls `POST /v1/docs-chat` with `client="cli"` so it can use RAG (specialist answers) and decide when
+  - `molsys-ai chat` calls `POST /v1/chat` with `client="cli"` so it can use RAG (specialist answers) and decide when
     to show sources via an LLM router call.
   - It stores a user API key locally under `~/.config/molsys-ai/config.json` (mode `0600` when possible).
   - For keys prefixed with `u1_` (lab/investigator), the CLI attempts a LAN endpoint first and falls back to the public API.
@@ -92,19 +93,19 @@ Repository documentation has been consolidated around:
 - a minimal `environment.yml` for general development (install Python deps via `pip install -e ".[dev]"`).
 - the stable API contract for external clients: `dev/API_CONTRACT_V1.md`.
 
-The docs chatbot stack is now validated end-to-end locally, including the browser/widget path:
+The chat API stack is now validated end-to-end locally, including the browser/widget path:
 
-- `server/docs_chat/backend.py` now accepts `messages` (recommended) in addition to legacy `query`,
-- `POST /v1/docs-chat` now returns `sources` aligned with citations `[1]`, `[2]`, ... and (when available) deep links to
+- `server/chat_api/backend.py` now accepts `messages` (recommended) in addition to legacy `query`,
+- `POST /v1/chat` now returns `sources` aligned with citations `[1]`, `[2]`, ... and (when available) deep links to
   published docs pages under `https://www.uibcdf.org/<tool>/...#Label`,
 - `server/web_widget/molsys_ai_widget.js` now keeps conversation history and sends it as `messages` when `mode: "backend"`.
   This has been validated end-to-end with a local Sphinx build + CORS (see `docs/index.md` and `dev/smoke_widget.sh`).
 - the widget renders a compact “Sources” dropdown for each assistant reply (using the `sources` field),
-- `docs_chat` supports optional CORS via `MOLSYS_AI_CORS_ORIGINS` (comma-separated), to allow serving docs and backend on
+- `chat_api` supports optional CORS via `MOLSYS_AI_CORS_ORIGINS` (comma-separated), to allow serving docs and backend on
   different ports during local/widget smoke tests.
 - Sphinx docs build now prefers `myst-nb` (with a fallback to `myst-parser`) and the widget can be toggled to backend mode
   via query parameters (`molsys_ai_mode` / `molsys_ai_backend_url`) in `docs/_static/molsys_ai_config.js`.
-- Widget end-to-end smoke (Sphinx page → widget → docs_chat → model_server) was validated via CORS preflight + cross-origin
+- Widget end-to-end smoke (Sphinx page → widget → chat_api → model_server) was validated via CORS preflight + cross-origin
   POST, retrieving the expected answer (`1VII`). A reproducible runner exists: `dev/smoke_widget.sh`.
 - Public deployment direction: serve docs via GitHub Pages under `https://uibcdf.org/...` and run the API separately under
   `https://api.uibcdf.org` (DNS `A` record in place). A deployment guide is captured in `dev/DEPLOY_API.md`.
@@ -129,10 +130,10 @@ RAG corpus automation (live docs repos):
 
 - A reproducible corpus snapshot + index build is available via `dev/sync_rag_corpus.py` (targets sibling repos:
   `../molsysmt`, `../molsysviewer`, `../pyunitwizard`, `../topomt`).
-- The same script can generate an anchors map (`server/docs_chat/data/anchors.json`) by extracting explicit MyST labels
+- The same script can generate an anchors map (`server/chat_api/data/anchors.json`) by extracting explicit MyST labels
   `(Label)=` from `docs/` sources, without running Sphinx or importing upstream packages.
-- The generated corpus and index live under `server/docs_chat/data/` by default and are intentionally ignored by git.
-- An in-process end-to-end smoke (retrieve → prompt → vLLM backend) is available via `dev/smoke_docs_chat_inprocess.py`.
+- The generated corpus and index live under `server/chat_api/data/` by default and are intentionally ignored by git.
+- An in-process end-to-end smoke (retrieve → prompt → vLLM backend) is available via `dev/smoke_chat_inprocess.py`.
 
 ## 4. Next Steps
 
@@ -142,12 +143,12 @@ The immediate next steps focus on validating the docs chatbot and then iterating
     - Send the port-opening request for `443/tcp` (and optionally `80/tcp`) using `dev/FIREWALL_PORT_REQUEST_TEMPLATE.md`.
     - Until `443` is opened, use the external VPS + SSH reverse tunnel path in `dev/DEPLOY_API.md`.
     - Once `443` is opened, deploy with Caddy + systemd using `dev/RUNBOOK_DEPLOY_443.md`.
-1.  **Widget integration smoke:** Run `model_server` (vLLM) + `docs_chat` together and verify that the web widget (Sphinx)
-    can talk to `POST /v1/docs-chat` in multi-turn mode (`messages` history), returning answers that cite `[1]`, `[2]` and
+1.  **Widget integration smoke:** Run `model_server` (vLLM) + `chat_api` together and verify that the web widget (Sphinx)
+    can talk to `POST /v1/chat` in multi-turn mode (`messages` history), returning answers that cite `[1]`, `[2]` and
     sources that deep-link into `https://www.uibcdf.org/<tool>/...#Label`.
 2.  **Docs deployment integration:** Decide how the widget and backend will be deployed for real docs sites (same-origin vs
     separate service; CORS; rate-limiting if needed).
-    - Keep `model_server` (`/v1/chat`) bound to localhost; expose `docs_chat` (`/v1/docs-chat`) for CLI + widget, with API keys
+    - Keep `model_server` (`/v1/engine/chat`) bound to localhost; expose `chat_api` (`/v1/chat`) for CLI + widget, with API keys
       and rate limiting as needed.
 3.  **Improve RAG quality:**
     - **Prompt Engineering:** Refine the prompt sent to the LLM to make more effective use of the documentation context.

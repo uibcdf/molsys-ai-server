@@ -25,15 +25,14 @@ Service overview:
   - docs chatbot backend on `127.0.0.1:8000`
   - model server on `127.0.0.1:8001`
 - Public endpoints:
-  - `POST /v1/docs-chat` (docs widget; CORS enabled for `https://uibcdf.org`)
-  - `POST /v1/docs-chat` is also used by the CLI (non-browser clients)
+  - `POST /v1/chat` (docs widget + CLI; CORS enabled for `https://uibcdf.org`)
 
 Security measures (planned):
 
 - TLS termination on the reverse proxy (Let’s Encrypt).
 - The model server is not exposed directly to the Internet (only via reverse proxy).
-- Optional API key authentication for `/v1/docs-chat` (allowlist via environment variable).
-- API key authentication for the internal model server endpoint (`/v1/chat`, bound to `127.0.0.1`).
+- Optional API key authentication for `/v1/chat` (allowlist via environment variable).
+- API key authentication for the internal model engine endpoint (`/v1/engine/chat`, bound to `127.0.0.1`).
 - Access logs enabled; service logs retained for incident response.
 - Rate limiting will be enforced at the reverse proxy layer when available.
 

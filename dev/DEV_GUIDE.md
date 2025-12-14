@@ -208,7 +208,7 @@ Examples:
 ```bash
 ruff check .
 pytest
-mypy client/agent server/model_server server/rag server/docs_chat client/cli
+mypy client/agent server/model_server server/rag server/chat_api client/cli
 ```
 
 These commands are not yet enforced by CI, but are recommended during development.

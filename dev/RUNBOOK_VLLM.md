@@ -40,7 +40,7 @@ Install the MolSys-AI server dependencies (from this repo):
 pip install -e ".[server]"
 ```
 
-If you want to run the docs chatbot backend (`server/docs_chat/`) with retrieval,
+If you want to run the chat API (`server/chat_api/`) with retrieval,
 also install the RAG dependencies:
 
 ```bash
@@ -181,17 +181,17 @@ hits the API, and cleans up on exit):
 This script includes a small multi-turn request to validate that the chat
 template is applied.
 
-### 6.0 Optional API key protection
+### 6.0 Optional API key protection (engine endpoint)
 
-For deployments where `/v1/chat` is protected, set:
+For deployments where the engine endpoint is protected, set:
 
-- `MOLSYS_AI_CHAT_API_KEYS` on the server (comma-separated allowlist),
-- `MOLSYS_AI_CHAT_API_KEY` on the client side to send `Authorization: Bearer ...`.
+- `MOLSYS_AI_ENGINE_API_KEYS` on the engine server (comma-separated allowlist),
+- `MOLSYS_AI_ENGINE_API_KEY` on the client side to send `Authorization: Bearer ...`.
 
 ### 6.1 Minimal generation
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8001/v1/chat \
+curl -sS -X POST http://127.0.0.1:8001/v1/engine/chat \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"Say only: smoke test OK"}]}'
 ```
@@ -201,12 +201,12 @@ curl -sS -X POST http://127.0.0.1:8001/v1/chat \
 For RAG experiments, include excerpts and the question in the same `content`
 (single-message RAG). Multi-turn chat is supported as well.
 
-### 6.3 Docs chatbot backend (end-to-end)
+### 6.3 Chat API (end-to-end, with RAG)
 
-If you want to validate the docs chatbot path (`docs_chat` → `model_server`):
+If you want to validate the full path (`chat_api` → `model_server`):
 
 1. Keep `model_server` running on `http://127.0.0.1:8001`.
-2. Start the docs backend on `8000`:
+2. Start the chat API on `8000`:
 
 ```bash
 mkdir -p /tmp/molsys_ai_docs_smoke
@@ -216,17 +216,17 @@ cat >/tmp/molsys_ai_docs_smoke/example.md <<'MD'
 The example PDB id is **1VII**.
 MD
 
-MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
 MOLSYS_AI_DOCS_DIR=/tmp/molsys_ai_docs_smoke \
 MOLSYS_AI_DOCS_INDEX=/tmp/molsys_ai_docs_smoke.pkl \
 MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-uvicorn docs_chat.backend:app --host 127.0.0.1 --port 8000
+uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
 ```
 
 3. Call it:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8000/v1/docs-chat \
+curl -sS -X POST http://127.0.0.1:8000/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"query":"What is the example PDB id? Reply with just the id.","k":3}'
 ```

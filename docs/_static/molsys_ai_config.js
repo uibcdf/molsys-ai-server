@@ -4,13 +4,13 @@
 
 window.molsysAiChatConfig = window.molsysAiChatConfig || {
   // "placeholder": always show the friendly placeholder reply.
-  // "backend": call the docs-chat backend and show its responses.
+  // "backend": call the MolSys-AI chat API and show its responses.
   mode: "placeholder",
-  // By default, talk to a docs-chat backend on the same origin.
+  // By default, talk to a chat API backend on the same origin.
   // If you serve docs under `uibcdf.org` and the API under `api.uibcdf.org`,
   // override this (or use the query-param toggles below).
-  backendUrl: window.location.origin.replace(/\/+$/, "") + "/v1/docs-chat",
-  // Optional API key for docs-chat (only useful if the backend is configured to require it).
+  backendUrl: window.location.origin.replace(/\/+$/, "") + "/v1/chat",
+  // Optional API key (only useful if the backend is configured to require it).
   // Note: if you set this in public docs pages, treat it as a public/low-privilege key.
   apiKey: "",
 };
@@ -18,17 +18,17 @@ window.molsysAiChatConfig = window.molsysAiChatConfig || {
 // Convenience toggles for local smoke tests (no rebuild required):
 //
 // - URL param:   ?molsys_ai_mode=backend
-// - URL param:   ?molsys_ai_backend_url=http://127.0.0.1:8000/v1/docs-chat
+// - URL param:   ?molsys_ai_backend_url=http://127.0.0.1:8000/v1/chat
 // - localStorage: localStorage.setItem("molsysAiChatMode", "backend")
 //
 // When serving docs and backend on different ports, you may need CORS on the
-// backend (see `MOLSYS_AI_CORS_ORIGINS` in `server/docs_chat/README.md`).
+// backend (see `MOLSYS_AI_CORS_ORIGINS` in `server/chat_api/README.md`).
 (function () {
   try {
     // If we are on the public docs domain, default to the public API domain.
     // This avoids requiring per-site config for `/molsysmt`, `/molsysviewer`, etc.
     if (window.location && window.location.hostname && window.location.hostname.endsWith("uibcdf.org")) {
-      window.molsysAiChatConfig.backendUrl = "https://api.uibcdf.org/v1/docs-chat";
+      window.molsysAiChatConfig.backendUrl = "https://api.uibcdf.org/v1/chat";
     }
 
     const params = new URLSearchParams(window.location.search || "");

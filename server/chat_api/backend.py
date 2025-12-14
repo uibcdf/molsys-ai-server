@@ -1,9 +1,9 @@
-"""Backend for the documentation chatbot (MVP).
+"""Chat API (RAG orchestrator) for MolSys-AI.
 
 This FastAPI app:
 - receives user messages from the JS widget,
 - optionally performs RAG over local documentation snapshots,
-- calls the model server (`/v1/chat`) to generate an answer,
+ - calls the model engine server (`/v1/engine/chat`) to generate an answer,
 - for CLI calls, can run an LLM router to decide whether to use RAG and show sources.
 """
 
@@ -25,7 +25,7 @@ from agent.model_client import HTTPModelClient
 from rag.build_index import build_index
 from rag.retriever import Document, load_index, retrieve
 
-app = FastAPI(title="MolSys-AI Docs Chat Backend (MVP)")
+app = FastAPI(title="MolSys-AI Chat API (RAG Orchestrator, MVP)")
 
 _cors_origins_raw = os.environ.get("MOLSYS_AI_CORS_ORIGINS", "").strip()
 if _cors_origins_raw:
@@ -48,14 +48,14 @@ DOCS_INDEX_PATH = Path(
     )
 ).expanduser()
 
-_DEFAULT_MODEL_SERVER_URL = "http://127.0.0.1:8001"
-MODEL_SERVER_URL = os.environ.get("MOLSYS_AI_MODEL_SERVER_URL", _DEFAULT_MODEL_SERVER_URL)
-MODEL_SERVER_API_KEY = (os.environ.get("MOLSYS_AI_MODEL_SERVER_API_KEY") or "").strip() or None
+_DEFAULT_ENGINE_URL = "http://127.0.0.1:8001"
+ENGINE_URL = os.environ.get("MOLSYS_AI_ENGINE_URL", _DEFAULT_ENGINE_URL)
+ENGINE_API_KEY = (os.environ.get("MOLSYS_AI_ENGINE_API_KEY") or "").strip() or None
 
 _DEFAULT_ANCHORS_PATH = Path(__file__).resolve().parent / "data" / "anchors.json"
 DOCS_ANCHORS_PATH = Path(os.environ.get("MOLSYS_AI_DOCS_ANCHORS", str(_DEFAULT_ANCHORS_PATH))).expanduser()
 
-_DOCS_CHAT_KEYS_ENV_VAR = "MOLSYS_AI_DOCS_CHAT_API_KEYS"
+_CHAT_KEYS_ENV_VAR = "MOLSYS_AI_CHAT_API_KEYS"
 
 _DOCS_INDEX: list[Document] = []
 _RATE_STATE: dict[tuple[str, int], int] = {}
@@ -66,8 +66,8 @@ class Message(BaseModel):
     content: str
 
 
-class DocsChatRequest(BaseModel):
-    """Incoming request schema for the docs chatbot.
+class ChatRequest(BaseModel):
+    """Incoming request schema for the chat API.
 
     Use `messages` for a real multi-turn chatbot. `query` is kept for
     backwards-compatible single-turn calls.
@@ -91,7 +91,7 @@ class Source(BaseModel):
     url: str | None = None
 
 
-class DocsChatResponse(BaseModel):
+class ChatResponse(BaseModel):
     answer: str
     sources: list[Source] = []
 
@@ -114,8 +114,8 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 @lru_cache()
-def get_docs_chat_api_keys() -> set[str]:
-    raw = (os.environ.get(_DOCS_CHAT_KEYS_ENV_VAR) or "").strip()
+def get_chat_api_keys() -> set[str]:
+    raw = (os.environ.get(_CHAT_KEYS_ENV_VAR) or "").strip()
     return {k.strip() for k in raw.split(",") if k.strip()}
 
 
@@ -138,8 +138,8 @@ def _load_anchors() -> dict[str, Any] | None:
         return None
 
 
-def require_docs_chat_api_key(request: Request) -> None:
-    allowed_keys = get_docs_chat_api_keys()
+def require_chat_api_key(request: Request) -> None:
+    allowed_keys = get_chat_api_keys()
     if not allowed_keys:
         return
     key = _extract_api_key(request)
@@ -157,15 +157,15 @@ def _client_ip(request: Request) -> str:
     return "unknown"
 
 
-def rate_limit_docs_chat(request: Request) -> None:
+def rate_limit_chat(request: Request) -> None:
     """Very small in-process rate limiter (optional).
 
-    Enable by setting `MOLSYS_AI_DOCS_CHAT_RATE_LIMIT_PER_MIN` to a positive integer.
+    Enable by setting `MOLSYS_AI_CHAT_RATE_LIMIT_PER_MIN` to a positive integer.
     This is not a replacement for reverse-proxy rate limiting, but it adds a minimal
     safety net for public demos.
     """
 
-    limit_per_min = _env_int("MOLSYS_AI_DOCS_CHAT_RATE_LIMIT_PER_MIN", 0)
+    limit_per_min = _env_int("MOLSYS_AI_CHAT_RATE_LIMIT_PER_MIN", 0)
     if limit_per_min <= 0:
         return
     ip = _client_ip(request)
@@ -357,17 +357,17 @@ async def healthz() -> dict:
     return {"status": "ok", "docs_index_chunks": len(_DOCS_INDEX)}
 
 
-@app.post("/v1/docs-chat", response_model=DocsChatResponse)
-async def docs_chat(
-    req: DocsChatRequest,
-    _auth: None = Depends(require_docs_chat_api_key),
-    _rl: None = Depends(rate_limit_docs_chat),
-) -> DocsChatResponse:
+@app.post("/v1/chat", response_model=ChatResponse)
+async def chat(
+    req: ChatRequest,
+    _auth: None = Depends(require_chat_api_key),
+    _rl: None = Depends(rate_limit_chat),
+) -> ChatResponse:
     allowed_roles = {"system", "user", "assistant"}
-    max_k = max(_env_int("MOLSYS_AI_DOCS_CHAT_MAX_K", 8), 1)
-    max_messages = max(_env_int("MOLSYS_AI_DOCS_CHAT_MAX_MESSAGES", 30), 1)
-    max_message_chars = max(_env_int("MOLSYS_AI_DOCS_CHAT_MAX_MESSAGE_CHARS", 4000), 200)
-    max_total_chars = max(_env_int("MOLSYS_AI_DOCS_CHAT_MAX_TOTAL_CHARS", 20000), 1000)
+    max_k = max(_env_int("MOLSYS_AI_CHAT_MAX_K", 8), 1)
+    max_messages = max(_env_int("MOLSYS_AI_CHAT_MAX_MESSAGES", 30), 1)
+    max_message_chars = max(_env_int("MOLSYS_AI_CHAT_MAX_MESSAGE_CHARS", 4000), 200)
+    max_total_chars = max(_env_int("MOLSYS_AI_CHAT_MAX_TOTAL_CHARS", 20000), 1000)
 
     req_k = int(req.k)
     if req_k <= 0:
@@ -415,7 +415,7 @@ async def docs_chat(
             show_sources = False
 
         if rag_mode == "auto" or sources_mode == "auto":
-            router_client = HTTPModelClient(base_url=MODEL_SERVER_URL, api_key=MODEL_SERVER_API_KEY)
+            router_client = HTTPModelClient(base_url=ENGINE_URL, api_key=ENGINE_API_KEY)
             router_text = router_client.generate(
                 _build_router_prompt(query),
                 generation={"temperature": 0.0, "top_p": 1.0, "max_tokens": 128},
@@ -460,7 +460,7 @@ async def docs_chat(
     else:
         context_block = ""
 
-    system_prompt = os.environ.get("MOLSYS_AI_DOCS_CHAT_SYSTEM_PROMPT") or _default_system_prompt()
+    system_prompt = os.environ.get("MOLSYS_AI_CHAT_SYSTEM_PROMPT") or _default_system_prompt()
     if use_rag and client_kind == "widget":
         system_prompt = (
             system_prompt.strip()
@@ -498,9 +498,9 @@ async def docs_chat(
                 messages[i]["content"] = f"{prefix}{context_block}\n\nQuestion: {original}"
                 break
 
-    client = HTTPModelClient(base_url=MODEL_SERVER_URL, api_key=MODEL_SERVER_API_KEY)
+    client = HTTPModelClient(base_url=ENGINE_URL, api_key=ENGINE_API_KEY)
     answer = client.generate(messages)
-    return DocsChatResponse(answer=answer, sources=sources if show_sources else [])
+    return ChatResponse(answer=answer, sources=sources if show_sources else [])
 
 
 @app.on_event("startup")

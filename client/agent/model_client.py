@@ -54,7 +54,7 @@ class HTTPModelClient(ModelClient):
     """HTTP-based model client.
 
     This implementation calls the FastAPI model server defined in
-    :mod:`model_server.server` using its ``/v1/chat`` endpoint.
+    :mod:`model_server.server` using its ``/v1/engine/chat`` endpoint.
     """
 
     def __init__(self, base_url: str, api_key: str | None = None) -> None:
@@ -63,7 +63,7 @@ class HTTPModelClient(ModelClient):
         self.api_key = (api_key or "").strip() or None
 
     def generate(self, messages: List[Dict[str, str]], *, generation: Optional[Dict[str, Any]] = None) -> str:
-        url = f"{self.base_url}/v1/chat"
+        url = f"{self.base_url}/v1/engine/chat"
         payload: Dict[str, Any] = {"messages": messages}
         if generation:
             payload["generation"] = generation

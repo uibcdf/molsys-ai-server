@@ -23,8 +23,8 @@ Example usage:
 ```python
 from agent.notebook import create_notebook_agent, NotebookChatSession
 
-# Create an agent that talks to the model server
-agent = create_notebook_agent()  # uses MOLSYS_AI_MODEL_SERVER_URL or http://127.0.0.1:8000
+# Create an agent that talks to the internal engine server
+agent = create_notebook_agent()  # uses MOLSYS_AI_ENGINE_URL or http://127.0.0.1:8001
 
 session = NotebookChatSession(agent=agent)
 

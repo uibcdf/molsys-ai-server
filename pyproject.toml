@@ -79,5 +79,5 @@ include = [
   "cli",
   "model_server",
   "rag",
-  "docs_chat",
+  "chat_api",
 ]

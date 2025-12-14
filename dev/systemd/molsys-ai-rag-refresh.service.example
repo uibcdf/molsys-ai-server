@@ -1,5 +1,5 @@
 [Unit]
-Description=MolSys-AI RAG corpus refresh (sync + rebuild index + restart docs_chat)
+Description=MolSys-AI RAG corpus refresh (sync + rebuild index + restart chat_api)
 After=network.target
 
 [Service]
@@ -15,14 +15,13 @@ EnvironmentFile=/etc/molsys-ai/molsys-ai.env
 # unit will use those paths. Otherwise it falls back to repo defaults.
 ExecStart=/bin/bash -lc '\
   set -euo pipefail; \
-  DOCS_DIR="${MOLSYS_AI_DOCS_DIR:-server/docs_chat/data/docs}"; \
-  INDEX_PATH="${MOLSYS_AI_DOCS_INDEX:-server/docs_chat/data/rag_index.pkl}"; \
+  DOCS_DIR="${MOLSYS_AI_DOCS_DIR:-server/chat_api/data/docs}"; \
+  INDEX_PATH="${MOLSYS_AI_DOCS_INDEX:-server/chat_api/data/rag_index.pkl}"; \
   /opt/molsys-ai-server/.venv/bin/python dev/sync_rag_corpus.py --clean --build-index --dest "$DOCS_DIR" --index "$INDEX_PATH" \
 '
 
-# Reload docs_chat so it picks up the new index (index is loaded on startup).
-ExecStartPost=/bin/systemctl restart molsys-ai-docs-chat
+# Reload chat_api so it picks up the new index (index is loaded on startup).
+ExecStartPost=/bin/systemctl restart molsys-ai-chat-api
 
 [Install]
 WantedBy=multi-user.target
-

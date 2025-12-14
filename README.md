@@ -17,9 +17,9 @@ MolSys-AI aims to provide:
 
 This repository currently contains the initial architecture, decisions and development roadmap.
 
-Docs chatbot note:
+Chat API note:
 
-- `POST /v1/docs-chat` returns an `answer` that cites bracketed sources (`[1]`, `[2]`, ...) and a `sources` list that can
+- `POST /v1/chat` returns an `answer` that can cite bracketed sources (`[1]`, `[2]`, ...) and a `sources` list that can
   deep-link to published docs under `https://www.uibcdf.org/<tool>/...#Label` (when an anchors map is available).
 
 ## Repository naming note

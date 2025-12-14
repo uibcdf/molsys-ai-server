@@ -18,7 +18,7 @@ def test_smoke_imports():
         "rag.embeddings",
         "rag.retriever",
         "model_server.server",
-        "docs_chat.backend",
+        "chat_api.backend",
         "cli.main",
     ]:
         importlib.import_module(mod)
@@ -43,6 +43,5 @@ def test_agent_with_tool(mocker):
     # being called, we expect the mocked (empty) tool output.
     # The important part is that the code runs without crashing.
     assert isinstance(reply, str)
-
 
 

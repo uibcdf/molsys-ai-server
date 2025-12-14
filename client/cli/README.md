@@ -52,7 +52,7 @@ Chat (interactive):
 molsys-ai chat
 ```
 
-By default, `molsys-ai chat` calls `POST /v1/docs-chat` with `client="cli"` and lets the server decide when to use RAG
+By default, `molsys-ai chat` calls `POST /v1/chat` with `client="cli"` and lets the server decide when to use RAG
 and when to show sources (citations and links).
 
 Agent mode (local tools + remote LLM):
@@ -121,5 +121,5 @@ of source URLs.
 - The current CLI is intentionally minimal and focused on API access.
 - Future extensions may include:
   - interactive chat sessions,
-  - authenticated docs-chat access if needed,
+  - authenticated chat access if needed,
   - richer output formatting.

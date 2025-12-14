@@ -12,11 +12,11 @@ from typing import Dict, List, Optional
 from cli.config import CLIConfig, load_config, save_config
 from cli.http_api import (
     pick_base_urls,
+    post_engine_chat,
     post_chat,
-    post_docs_chat,
-    post_docs_chat_json,
-    post_docs_chat_json_any,
-    post_docs_chat_messages,
+    post_chat_json,
+    post_chat_json_any,
+    post_chat_messages,
     resolve_api_key,
 )
 
@@ -55,7 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Show advanced/internal fields.",
     )
 
-    p_chat = sub.add_parser("chat", help="Chat with MolSys-AI (RAG-enabled, via /v1/docs-chat)")
+    p_chat = sub.add_parser("chat", help="Chat with MolSys-AI (RAG-enabled, via /v1/chat)")
     _add_common_server_flags(p_chat)
     p_chat.add_argument("-m", "--message", help="Send a single message and exit.")
     p_chat.add_argument(
@@ -79,7 +79,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Auto-approve tool execution (unsafe; intended for trusted environments).",
     )
 
-    p_docs = sub.add_parser("docs", help="Ask a documentation question (forces sources, via /v1/docs-chat)")
+    p_docs = sub.add_parser("docs", help="Ask a documentation question (forces sources, via /v1/chat)")
     _add_common_server_flags(p_docs)
     p_docs.add_argument("-m", "--message", help="Send a single question and exit (otherwise interactive).")
     p_docs.add_argument("-k", type=int, default=5, help="Number of retrieved snippets (default: 5).")
@@ -145,7 +145,7 @@ def _cmd_chat(cfg: CLIConfig, *, server_url: str | None, api_key_arg: str | None
         nonlocal messages
         messages.append({"role": "user", "content": user_text})
         try:
-            data, sources = post_docs_chat_json_any(
+            data, sources = post_chat_json_any(
                 base_urls=base_urls,
                 api_key=api_key,
                 query=None,
@@ -274,7 +274,7 @@ def _cmd_agent(
             messages.append({"role": "system", "content": f"Tool result:\n{tool_result}"})
 
         try:
-            reply = post_chat(base_urls=base_urls, api_key=api_key, messages=messages, timeout=cfg.timeout)
+            reply = post_engine_chat(base_urls=base_urls, api_key=api_key, messages=messages, timeout=cfg.timeout)
         except RuntimeError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return False
@@ -312,7 +312,7 @@ def _cmd_docs(cfg: CLIConfig, *, server_url: str | None, api_key_arg: str | None
         nonlocal messages
         messages.append({"role": "user", "content": user_text})
         try:
-            data, sources = post_docs_chat_json_any(
+            data, sources = post_chat_json_any(
                 base_urls=base_urls,
                 api_key=api_key,
                 query=None,
@@ -347,7 +347,7 @@ def _cmd_docs(cfg: CLIConfig, *, server_url: str | None, api_key_arg: str | None
 
     if message:
         try:
-            data, sources = post_docs_chat_json_any(
+            data, sources = post_chat_json_any(
                 base_urls=base_urls,
                 api_key=api_key,
                 query=message,

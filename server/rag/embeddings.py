@@ -40,7 +40,7 @@ class HashingEmbeddingModel:
     This is a deterministic hashing-based baseline intended for:
     - development environments without `sentence-transformers`,
     - offline smoke tests,
-    - keeping the docs-chat backend runnable even without embedding models.
+    - keeping the chat API runnable even without embedding models.
 
     It is not intended for high-quality retrieval.
     """

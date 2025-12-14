@@ -1,4 +1,4 @@
-# Deploying `api.uibcdf.org` (docs chatbot + model server)
+# Deploying `api.uibcdf.org` (chat API + model engine)
 
 This guide describes a production-oriented deployment for:
 
@@ -67,12 +67,12 @@ available** for MolSys-AI unless the center confirms you can repurpose it.
 Run them bound to `127.0.0.1` (not directly exposed to the Internet):
 
 - `model_server` (vLLM) on `127.0.0.1:8001` (source: `server/model_server/`)
-- `docs_chat` on `127.0.0.1:8000` and allow the docs origin via CORS (source: `server/docs_chat/`)
+- `chat_api` on `127.0.0.1:8000` and allow the docs origin via CORS (source: `server/chat_api/`)
 
-Example env vars for `docs_chat`:
+Example env vars for `chat_api`:
 
 ```bash
-export MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001
+export MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001
 export MOLSYS_AI_CORS_ORIGINS=https://uibcdf.org,https://www.uibcdf.org
 export MOLSYS_AI_EMBEDDINGS=sentence-transformers
 ```
@@ -80,17 +80,17 @@ export MOLSYS_AI_EMBEDDINGS=sentence-transformers
 For a systemd-based deployment, see the example unit files:
 
 - `dev/systemd/molsys-ai-model.service.example`
-- `dev/systemd/molsys-ai-docs-chat.service.example`
+- `dev/systemd/molsys-ai-chat-api.service.example`
 - `dev/molsys-ai.env.example`
 
 ## 3) Reverse proxy + TLS (recommended)
 
 Use a reverse proxy to terminate TLS and route:
 
-- `https://api.uibcdf.org/v1/docs-chat` → `http://127.0.0.1:8000/v1/docs-chat`
+- `https://api.uibcdf.org/v1/chat` → `http://127.0.0.1:8000/v1/chat`
 
-Keep the model server bound to `127.0.0.1`. The public API should expose only `docs_chat`;
-`docs_chat` calls the model server privately over `http://127.0.0.1:8001/v1/chat`.
+Keep the model engine server bound to `127.0.0.1`. The public API should expose only `chat_api`;
+`chat_api` calls the model engine server privately over `http://127.0.0.1:8001/v1/engine/chat`.
 
 ### Option A: Caddy (simple)
 
@@ -102,9 +102,9 @@ Example `Caddyfile`:
 api.uibcdf.org {
   encode zstd gzip
 
-  reverse_proxy /v1/docs-chat* 127.0.0.1:8000
+  reverse_proxy /v1/chat* 127.0.0.1:8000
 
-  # Optional: expose OpenAPI for docs_chat
+  # Optional: expose OpenAPI for chat_api
   reverse_proxy /docs* 127.0.0.1:8000
   reverse_proxy /openapi.json 127.0.0.1:8000
 }
@@ -134,12 +134,12 @@ Keep any CLI/agent endpoints (future) behind API keys; do not expose the raw mod
 
 ### API key policy (recommended)
 
-- Keep `POST /v1/docs-chat` public for the docs widget (CORS is a browser-only control).
-- If you protect `POST /v1/docs-chat` with API keys (`MOLSYS_AI_DOCS_CHAT_API_KEYS`), treat the widget key as public and
+- Keep `POST /v1/chat` public for the docs widget (CORS is a browser-only control).
+- If you protect `POST /v1/chat` with API keys (`MOLSYS_AI_CHAT_API_KEYS`), treat the widget key as public and
   apply strict rate limiting at the proxy layer.
-- Protect the internal model server endpoint (`POST /v1/chat`) with an API key allowlist:
-  - set `MOLSYS_AI_CHAT_API_KEYS` on the `model_server`,
-  - set `MOLSYS_AI_MODEL_SERVER_API_KEY` on `docs_chat` so it can call `http://127.0.0.1:8001/v1/chat`.
+- Protect the internal model engine endpoint (`POST /v1/engine/chat`) with an API key allowlist:
+  - set `MOLSYS_AI_ENGINE_API_KEYS` on the `model_server`,
+  - set `MOLSYS_AI_ENGINE_API_KEY` on `chat_api` so it can call `http://127.0.0.1:8001/v1/engine/chat`.
 
 Clients can authenticate with:
 
@@ -151,12 +151,12 @@ Clients can authenticate with:
 If the data-center firewall exposes some non-standard port (e.g. `8443`) but
 blocks `80/443`, you can still run a public demo at:
 
-- `https://api.uibcdf.org:<PORT>/v1/docs-chat`
+- `https://api.uibcdf.org:<PORT>/v1/chat`
 
 Requirements:
 
 - A trusted TLS certificate for `api.uibcdf.org` (use DNS-01 validation).
-- `docs_chat` (or a local reverse proxy) listening on `0.0.0.0:<PORT>` with TLS enabled.
+- `chat_api` (or a local reverse proxy) listening on `0.0.0.0:<PORT>` with TLS enabled.
 - CORS allowing the docs origin: `https://uibcdf.org`.
 
 Before using a port, verify it is actually bound on this host and reachable:
@@ -167,20 +167,20 @@ Before using a port, verify it is actually bound on this host and reachable:
 Practical approach:
 
 1) Obtain a certificate using a DNS-01 ACME client (e.g. certbot manual DNS).
-2) Run `docs_chat` with TLS on that port:
+2) Run `chat_api` with TLS on that port:
 
 ```bash
-MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
 MOLSYS_AI_CORS_ORIGINS=https://uibcdf.org,https://www.uibcdf.org \
 MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-uvicorn docs_chat.backend:app --host 0.0.0.0 --port <PORT> \
+uvicorn chat_api.backend:app --host 0.0.0.0 --port <PORT> \
   --ssl-keyfile /path/to/privkey.pem \
   --ssl-certfile /path/to/fullchain.pem
 ```
 
 3) Use the widget query-param override in docs during the demo:
 
-`?molsys_ai_mode=backend&molsys_ai_backend_url=https://api.uibcdf.org:<PORT>/v1/docs-chat`
+`?molsys_ai_mode=backend&molsys_ai_backend_url=https://api.uibcdf.org:<PORT>/v1/chat`
 
 ## 5) Temporary public demo without inbound 80/443 (recommended fallback)
 
@@ -192,8 +192,8 @@ High-level idea:
 
 - The VPS is reachable from the Internet on `443` and terminates TLS for a demo domain.
 - The VPS reverse-proxies requests into an SSH tunnel that forwards to
-  `docs_chat` running on this GPU machine.
-- `docs_chat` continues to call `model_server` locally via `127.0.0.1`.
+  `chat_api` running on this GPU machine.
+- `chat_api` continues to call `model_server` locally via `127.0.0.1`.
 
 ### 5.1 Create a demo subdomain
 
@@ -208,18 +208,18 @@ Keep `api.uibcdf.org` pointing to this machine for the final deployment later.
 Run both bound to `127.0.0.1`:
 
 - `model_server` on `127.0.0.1:8001`
-- `docs_chat` on `127.0.0.1:8000`
+- `chat_api` on `127.0.0.1:8000`
 
 Use CORS for the public docs origin:
 
 ```bash
-export MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001
+export MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001
 export MOLSYS_AI_CORS_ORIGINS=https://uibcdf.org,https://www.uibcdf.org
 ```
 
 ### 5.3 Create the SSH reverse tunnel (GPU machine → VPS)
 
-On the GPU machine, forward the VPS local port `9000` to local `docs_chat:8000`:
+On the GPU machine, forward the VPS local port `9000` to local `chat_api:8000`:
 
 ```bash
 ssh -N \
@@ -248,6 +248,6 @@ api-demo.uibcdf.org {
 
 During the demo, use the widget query param override:
 
-`?molsys_ai_mode=backend&molsys_ai_backend_url=https://api-demo.uibcdf.org/v1/docs-chat`
+`?molsys_ai_mode=backend&molsys_ai_backend_url=https://api-demo.uibcdf.org/v1/chat`
 
 This avoids changing the default `api.uibcdf.org` setting in the docs.

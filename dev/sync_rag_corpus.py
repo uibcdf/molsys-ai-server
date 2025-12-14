@@ -2,7 +2,7 @@
 """Sync a documentation corpus for MolSys-AI RAG from sibling repos.
 
 This script snapshots selected text files from live, sibling repositories
-into `server/docs_chat/data/docs/` so that the docs-chat backend can build a
+into `server/chat_api/data/docs/` so that the chat API can build a
 local RAG index.
 
 Default sources (relative to this repo):
@@ -32,9 +32,9 @@ from typing import Iterable, Iterator, Tuple
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DEST = REPO_ROOT / "server" / "docs_chat" / "data" / "docs"
-DEFAULT_INDEX = REPO_ROOT / "server" / "docs_chat" / "data" / "rag_index.pkl"
-DEFAULT_ANCHORS = REPO_ROOT / "server" / "docs_chat" / "data" / "anchors.json"
+DEFAULT_DEST = REPO_ROOT / "server" / "chat_api" / "data" / "docs"
+DEFAULT_INDEX = REPO_ROOT / "server" / "chat_api" / "data" / "rag_index.pkl"
+DEFAULT_ANCHORS = REPO_ROOT / "server" / "chat_api" / "data" / "anchors.json"
 
 DEFAULT_SOURCES = {
     "molsysmt": REPO_ROOT.parent / "molsysmt",

@@ -1,6 +1,6 @@
-# docs_chat data directory
+# chat_api data directory
 
-This directory is used for **generated** artifacts needed by the docs chatbot backend:
+This directory is used for **generated** artifacts needed by the MolSys-AI chat API:
 
 - `docs/`: a snapshot of documentation text files (`*.md`, `*.rst`, `*.txt`, `*.ipynb`) used for RAG.
 - `rag_index.pkl`: the built embedding index.
@@ -32,7 +32,7 @@ By default this syncs documentation content from the sibling repos:
 
 and writes a manifest to:
 
-- `server/docs_chat/data/docs/_manifest.json`
+- `server/chat_api/data/docs/_manifest.json`
 
 For production deployments, you may prefer storing these artifacts under a system
 directory (e.g. `/var/lib/molsys-ai/...`) and set:

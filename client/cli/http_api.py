@@ -30,7 +30,7 @@ def pick_base_urls(
     return [public_base_url]
 
 
-def post_chat(
+def post_engine_chat(
     *,
     base_urls: Sequence[str],
     api_key: str | None,
@@ -39,7 +39,7 @@ def post_chat(
 ) -> str:
     last_exc: Exception | None = None
     for base in base_urls:
-        url = f"{base.rstrip('/')}/v1/chat"
+        url = f"{base.rstrip('/')}/v1/engine/chat"
         try:
             resp = requests.post(
                 url,
@@ -52,7 +52,7 @@ def post_chat(
             continue
 
         if resp.status_code == 401:
-            raise RuntimeError("Unauthorized: invalid or missing API key for /v1/chat.")
+            raise RuntimeError("Unauthorized: invalid or missing API key for /v1/engine/chat.")
         if resp.status_code >= 400:
             raise RuntimeError(f"Server error calling {url}: HTTP {resp.status_code} {resp.text[:200]}")
 
@@ -69,7 +69,7 @@ def post_chat(
     raise RuntimeError(f"Failed to reach any configured server. Last error: {last_exc!r}")
 
 
-def post_docs_chat(
+def post_chat(
     *,
     base_url: str,
     api_key: str | None,
@@ -77,7 +77,7 @@ def post_docs_chat(
     k: int = 5,
     timeout: tuple[float, float],
 ) -> str:
-    data, _sources = post_docs_chat_json(
+    data, _sources = post_chat_json(
         base_url=base_url,
         api_key=api_key,
         query=query,
@@ -94,7 +94,7 @@ def post_docs_chat(
     return answer
 
 
-def post_docs_chat_json(
+def post_chat_json(
     *,
     base_url: str,
     api_key: str | None,
@@ -106,12 +106,12 @@ def post_docs_chat_json(
     sources: str | None,
     timeout: tuple[float, float],
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    """Call `/v1/docs-chat` and return the parsed JSON response plus sources list."""
+    """Call `/v1/chat` and return the parsed JSON response plus sources list."""
 
     if not query and not messages:
         raise ValueError("Provide either query or messages.")
 
-    url = f"{base_url.rstrip('/')}/v1/docs-chat"
+    url = f"{base_url.rstrip('/')}/v1/chat"
     payload: Dict[str, Any] = {"k": int(k)}
     if query:
         payload["query"] = query
@@ -132,10 +132,10 @@ def post_docs_chat_json(
             timeout=timeout,
         )
     except requests.RequestException as exc:
-        raise RuntimeError(f"Failed to call docs-chat at {url}") from exc
+        raise RuntimeError(f"Failed to call chat API at {url}") from exc
 
     if resp.status_code == 401:
-        raise RuntimeError("Unauthorized: invalid or missing API key for /v1/docs-chat.")
+        raise RuntimeError("Unauthorized: invalid or missing API key for /v1/chat.")
     if resp.status_code >= 400:
         raise RuntimeError(f"Server error calling {url}: HTTP {resp.status_code} {resp.text[:200]}")
 
@@ -154,7 +154,7 @@ def post_docs_chat_json(
     return data, clean_srcs
 
 
-def post_docs_chat_json_any(
+def post_chat_json_any(
     *,
     base_urls: Sequence[str],
     api_key: str | None,
@@ -169,7 +169,7 @@ def post_docs_chat_json_any(
     last_exc: Exception | None = None
     for base in base_urls:
         try:
-            return post_docs_chat_json(
+            return post_chat_json(
                 base_url=base,
                 api_key=api_key,
                 query=query,
@@ -186,7 +186,7 @@ def post_docs_chat_json_any(
     raise RuntimeError(f"Failed to reach any configured server. Last error: {last_exc!r}")
 
 
-def post_docs_chat_messages(
+def post_chat_messages(
     *,
     base_url: str,
     api_key: str | None,
@@ -194,7 +194,7 @@ def post_docs_chat_messages(
     k: int = 5,
     timeout: tuple[float, float],
 ) -> str:
-    data, _sources = post_docs_chat_json(
+    data, _sources = post_chat_json(
         base_url=base_url,
         api_key=api_key,
         query=None,
@@ -216,7 +216,6 @@ def resolve_api_key(cli_arg: str | None, config_key: str | None) -> str | None:
         (cli_arg or "").strip()
         or (os.environ.get("MOLSYS_AI_API_KEY") or "").strip()
         or (os.environ.get("MOLSYS_AI_CHAT_API_KEY") or "").strip()
-        or (os.environ.get("MOLSYS_AI_DOCS_CHAT_API_KEY") or "").strip()
         or (config_key or "").strip()
         or None
     )

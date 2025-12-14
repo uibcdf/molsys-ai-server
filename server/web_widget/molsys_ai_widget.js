@@ -4,7 +4,7 @@
 // For the first pilot, the widget:
 // - renders a small chat box on pages that include it,
 // - captures user messages,
-// - runs in "placeholder" mode (no network) or "backend" mode (calls `/v1/docs-chat`).
+// - runs in "placeholder" mode (no network) or "backend" mode (calls `/v1/chat`).
 //
 // In backend mode, the widget sends full conversation history as `messages` and
 // renders a compact “Sources” dropdown for each assistant reply.
@@ -36,7 +36,7 @@
     const apiKey = ensureString(globalConfig.apiKey || "");
     let backendUrl =
       globalConfig.backendUrl ||
-      (window.location.origin.replace(/\/+$/, "") + "/v1/docs-chat");
+      (window.location.origin.replace(/\/+$/, "") + "/v1/chat");
     const container = document.createElement("div");
     container.style.border = "1px solid #ccc";
     container.style.borderRadius = "6px";
@@ -183,7 +183,7 @@
       conversation.push({ role: "user", content: text });
 
       if (mode === "backend") {
-        // Call the docs-chat backend. Even in backend mode this stays simple:
+        // Call the chat API backend. Even in backend mode this stays simple:
         // no streaming, just a single request/response.
         try {
           fetch(backendUrl, {

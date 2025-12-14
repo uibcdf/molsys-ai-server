@@ -3,17 +3,17 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-End-to-end smoke test for the Sphinx widget → docs_chat → model_server path.
+End-to-end smoke test for the Sphinx widget → chat_api → model_server path.
 
 This script:
 - builds the Sphinx pilot docs,
 - starts a model_server (vLLM) on a local port,
-- starts docs_chat with CORS enabled for the docs origin,
+- starts chat_api with CORS enabled for the docs origin,
 - serves the built docs via python http.server,
 - validates:
   - the HTML includes widget scripts,
   - CORS preflight (OPTIONS) succeeds,
-  - cross-origin POST to /v1/docs-chat works and returns the expected answer,
+  - cross-origin POST to /v1/chat works and returns the expected answer,
 - cleans up on exit.
 
 Prerequisites:
@@ -23,7 +23,7 @@ Prerequisites:
 Env vars (optional):
   HOST                 (default: 127.0.0.1)
   MODEL_PORT           (default: 8001)
-  DOCS_CHAT_PORT       (default: 8000)
+  CHAT_API_PORT        (default: 8000)
   DOCS_HTTP_PORT       (default: 8080)
   CUDA_VISIBLE_DEVICES (default: 0)
   CUDA_HOME            (default: /usr/local/cuda)
@@ -35,7 +35,7 @@ Env vars (optional):
 
 Examples:
   ./dev/smoke_widget.sh
-  DOCS_HTTP_PORT=8081 MODEL_PORT=8091 DOCS_CHAT_PORT=8090 ./dev/smoke_widget.sh
+  DOCS_HTTP_PORT=8081 MODEL_PORT=8091 CHAT_API_PORT=8090 ./dev/smoke_widget.sh
 EOF
 }
 
@@ -49,7 +49,7 @@ export PYTHONPATH="${ROOT_DIR}/server:${ROOT_DIR}/client:${PYTHONPATH:-}"
 
 HOST="${HOST:-127.0.0.1}"
 MODEL_PORT="${MODEL_PORT:-8001}"
-DOCS_CHAT_PORT="${DOCS_CHAT_PORT:-8000}"
+CHAT_API_PORT="${CHAT_API_PORT:-8000}"
 DOCS_HTTP_PORT="${DOCS_HTTP_PORT:-8080}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
@@ -62,10 +62,10 @@ EMBEDDINGS="${EMBEDDINGS:-sentence-transformers}"
 
 MODEL_CFG="/tmp/molsys_ai_widget_model_${MODEL_PORT}.yaml"
 MODEL_LOG="/tmp/molsys_ai_widget_model_${MODEL_PORT}.log"
-DOCS_CHAT_LOG="/tmp/molsys_ai_widget_docs_chat_${DOCS_CHAT_PORT}.log"
+CHAT_API_LOG="/tmp/molsys_ai_widget_chat_api_${CHAT_API_PORT}.log"
 DOCS_HTTP_LOG="/tmp/molsys_ai_widget_docs_http_${DOCS_HTTP_PORT}.log"
-DOCS_DIR="/tmp/molsys_ai_widget_docs_src_${DOCS_CHAT_PORT}"
-DOCS_INDEX="/tmp/molsys_ai_widget_docs_index_${DOCS_CHAT_PORT}.pkl"
+DOCS_DIR="/tmp/molsys_ai_widget_docs_src_${CHAT_API_PORT}"
+DOCS_INDEX="/tmp/molsys_ai_widget_docs_index_${CHAT_API_PORT}.pkl"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -78,9 +78,9 @@ cleanup() {
   if [[ -n "${HTTP_PID:-}" ]]; then
     kill -TERM "${HTTP_PID}" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${DOCS_CHAT_PID:-}" ]]; then
-    kill -TERM "${DOCS_CHAT_PID}" >/dev/null 2>&1 || true
-    pkill -TERM -P "${DOCS_CHAT_PID}" >/dev/null 2>&1 || true
+  if [[ -n "${CHAT_API_PID:-}" ]]; then
+    kill -TERM "${CHAT_API_PID}" >/dev/null 2>&1 || true
+    pkill -TERM -P "${CHAT_API_PID}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${MODEL_PID:-}" ]]; then
     kill -TERM "${MODEL_PID}" >/dev/null 2>&1 || true
@@ -90,9 +90,9 @@ cleanup() {
   if [[ -n "${HTTP_PID:-}" ]]; then
     kill -KILL "${HTTP_PID}" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${DOCS_CHAT_PID:-}" ]]; then
-    kill -KILL "${DOCS_CHAT_PID}" >/dev/null 2>&1 || true
-    pkill -KILL -P "${DOCS_CHAT_PID}" >/dev/null 2>&1 || true
+  if [[ -n "${CHAT_API_PID:-}" ]]; then
+    kill -KILL "${CHAT_API_PID}" >/dev/null 2>&1 || true
+    pkill -KILL -P "${CHAT_API_PID}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${MODEL_PID:-}" ]]; then
     kill -KILL "${MODEL_PID}" >/dev/null 2>&1 || true
@@ -117,7 +117,7 @@ import sys
 host = os.environ.get("HOST", "127.0.0.1")
 ports = [
     int(os.environ.get("MODEL_PORT", "8001")),
-    int(os.environ.get("DOCS_CHAT_PORT", "8000")),
+    int(os.environ.get("CHAT_API_PORT", "8000")),
     int(os.environ.get("DOCS_HTTP_PORT", "8080")),
 ]
 
@@ -163,12 +163,12 @@ model:
   enforce_eager: ${ENFORCE_EAGER}
 YAML
 
-rm -f "${MODEL_LOG}" "${DOCS_CHAT_LOG}" "${DOCS_HTTP_LOG}" "${DOCS_INDEX}"
+rm -f "${MODEL_LOG}" "${CHAT_API_LOG}" "${DOCS_HTTP_LOG}" "${DOCS_INDEX}"
 
 echo "[widget] starting model_server on ${HOST}:${MODEL_PORT} (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES})"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
 MOLSYS_AI_MODEL_CONFIG="${MODEL_CFG}" \
-MOLSYS_AI_CHAT_API_KEYS="${MOLSYS_AI_CHAT_API_KEYS:-}" \
+MOLSYS_AI_ENGINE_API_KEYS="${MOLSYS_AI_ENGINE_API_KEYS:-}" \
 uvicorn model_server.server:app --host "${HOST}" --port "${MODEL_PORT}" >"${MODEL_LOG}" 2>&1 &
 MODEL_PID=$!
 
@@ -180,29 +180,29 @@ for _ in $(seq 1 240); do
 done
 curl -fsS "http://${HOST}:${MODEL_PORT}/docs" >/dev/null 2>&1 || { tail -n 160 "${MODEL_LOG}" >&2 || true; exit 1; }
 
-DOCS_AUTH_HEADER=()
-if [[ -n "${MOLSYS_AI_DOCS_CHAT_API_KEY:-}" ]]; then
-  DOCS_AUTH_HEADER=(-H "Authorization: Bearer ${MOLSYS_AI_DOCS_CHAT_API_KEY}")
+CHAT_AUTH_HEADER=()
+if [[ -n "${MOLSYS_AI_CHAT_API_KEY:-}" ]]; then
+  CHAT_AUTH_HEADER=(-H "Authorization: Bearer ${MOLSYS_AI_CHAT_API_KEY}")
 fi
 
-echo "[widget] starting docs_chat on ${HOST}:${DOCS_CHAT_PORT}"
-MOLSYS_AI_MODEL_SERVER_URL="http://${HOST}:${MODEL_PORT}" \
-MOLSYS_AI_MODEL_SERVER_API_KEY="${MOLSYS_AI_MODEL_SERVER_API_KEY:-${MOLSYS_AI_CHAT_API_KEY:-}}" \
+echo "[widget] starting chat_api on ${HOST}:${CHAT_API_PORT}"
+MOLSYS_AI_ENGINE_URL="http://${HOST}:${MODEL_PORT}" \
+MOLSYS_AI_ENGINE_API_KEY="${MOLSYS_AI_ENGINE_API_KEY:-}" \
 MOLSYS_AI_DOCS_DIR="${DOCS_DIR}" \
 MOLSYS_AI_DOCS_INDEX="${DOCS_INDEX}" \
 MOLSYS_AI_EMBEDDINGS="${EMBEDDINGS}" \
 MOLSYS_AI_CORS_ORIGINS="http://${HOST}:${DOCS_HTTP_PORT},http://localhost:${DOCS_HTTP_PORT}" \
-MOLSYS_AI_DOCS_CHAT_API_KEYS="${MOLSYS_AI_DOCS_CHAT_API_KEYS:-}" \
-uvicorn docs_chat.backend:app --host "${HOST}" --port "${DOCS_CHAT_PORT}" >"${DOCS_CHAT_LOG}" 2>&1 &
-DOCS_CHAT_PID=$!
+MOLSYS_AI_CHAT_API_KEYS="${MOLSYS_AI_CHAT_API_KEYS:-}" \
+uvicorn chat_api.backend:app --host "${HOST}" --port "${CHAT_API_PORT}" >"${CHAT_API_LOG}" 2>&1 &
+CHAT_API_PID=$!
 
 for _ in $(seq 1 120); do
-  if curl -fsS "http://${HOST}:${DOCS_CHAT_PORT}/docs" >/dev/null 2>&1; then
+  if curl -fsS "http://${HOST}:${CHAT_API_PORT}/docs" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-curl -fsS "http://${HOST}:${DOCS_CHAT_PORT}/docs" >/dev/null 2>&1 || { tail -n 200 "${DOCS_CHAT_LOG}" >&2 || true; exit 1; }
+curl -fsS "http://${HOST}:${CHAT_API_PORT}/docs" >/dev/null 2>&1 || { tail -n 200 "${CHAT_API_LOG}" >&2 || true; exit 1; }
 
 for _ in $(seq 1 120); do
   if [[ -f "${DOCS_INDEX}" ]]; then
@@ -210,7 +210,7 @@ for _ in $(seq 1 120); do
   fi
   sleep 1
 done
-[[ -f "${DOCS_INDEX}" ]] || { echo "[widget] docs index not created" >&2; tail -n 200 "${DOCS_CHAT_LOG}" >&2 || true; exit 1; }
+[[ -f "${DOCS_INDEX}" ]] || { echo "[widget] docs index not created" >&2; tail -n 200 "${CHAT_API_LOG}" >&2 || true; exit 1; }
 
 echo "[widget] serving docs on ${HOST}:${DOCS_HTTP_PORT}"
 python -m http.server "${DOCS_HTTP_PORT}" --directory "$ROOT_DIR/docs/_build/html" >"${DOCS_HTTP_LOG}" 2>&1 &
@@ -228,17 +228,17 @@ curl -fsS "http://${HOST}:${DOCS_HTTP_PORT}/" | grep -q "_static/molsys_ai_widge
 echo "[widget] html includes widget scripts"
 
 echo "[widget] CORS preflight:"
-curl -i -sS -X OPTIONS "http://${HOST}:${DOCS_CHAT_PORT}/v1/docs-chat" \
+curl -i -sS -X OPTIONS "http://${HOST}:${CHAT_API_PORT}/v1/chat" \
   -H "Origin: http://${HOST}:${DOCS_HTTP_PORT}" \
   -H 'Access-Control-Request-Method: POST' \
   -H 'Access-Control-Request-Headers: content-type,authorization' \
   | grep -i '^access-control-allow-origin:' | head -n 1
 
 echo "[widget] cross-origin POST:"
-ans="$(curl -sS -X POST "http://${HOST}:${DOCS_CHAT_PORT}/v1/docs-chat" \
+ans="$(curl -sS -X POST "http://${HOST}:${CHAT_API_PORT}/v1/chat" \
   -H "Origin: http://${HOST}:${DOCS_HTTP_PORT}" \
   -H 'Content-Type: application/json' \
-  "${DOCS_AUTH_HEADER[@]}" \
+  "${CHAT_AUTH_HEADER[@]}" \
   -d '{"query":"What is the example PDB id? Reply with just the id.","k":2}' \
   | python -c 'import json,sys; print(json.load(sys.stdin).get("answer",""))')"
 echo "[widget] answer: ${ans}"
@@ -250,4 +250,4 @@ print("[widget] OK")
 PY
 
 echo "[widget] Open in a browser:"
-echo "http://${HOST}:${DOCS_HTTP_PORT}/?molsys_ai_mode=backend&molsys_ai_backend_url=http://${HOST}:${DOCS_CHAT_PORT}/v1/docs-chat"
+echo "http://${HOST}:${DOCS_HTTP_PORT}/?molsys_ai_mode=backend&molsys_ai_backend_url=http://${HOST}:${CHAT_API_PORT}/v1/chat"

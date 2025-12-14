@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""In-process end-to-end smoke test: RAG retrieve -> prompt -> local model backend.
+"""In-process end-to-end smoke test: RAG retrieve -> prompt -> local engine backend.
 
 This avoids running uvicorn servers (useful in restricted environments) while still
 validating:
@@ -33,8 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("PYTHONPATH", "server:client")
     os.environ.setdefault("MOLSYS_AI_EMBEDDINGS", "hashing")
 
-    docs_dir = Path(os.environ.get("MOLSYS_AI_DOCS_DIR") or (REPO_ROOT / "server/docs_chat/data/docs")).resolve()
-    index_path = Path(os.environ.get("MOLSYS_AI_DOCS_INDEX") or (REPO_ROOT / "server/docs_chat/data/rag_index.pkl")).resolve()
+    docs_dir = Path(os.environ.get("MOLSYS_AI_DOCS_DIR") or (REPO_ROOT / "server/chat_api/data/docs")).resolve()
+    index_path = Path(os.environ.get("MOLSYS_AI_DOCS_INDEX") or (REPO_ROOT / "server/chat_api/data/rag_index.pkl")).resolve()
 
     sys.path.insert(0, str(REPO_ROOT / "server"))
     sys.path.insert(0, str(REPO_ROOT / "client"))

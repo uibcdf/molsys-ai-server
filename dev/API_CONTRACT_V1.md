@@ -33,7 +33,51 @@ key value, not by the prefix alone.
 
 ### 2.1 `POST /v1/chat`
 
-Purpose: low-level chat completion for internal services (model backend).
+Purpose: public chat endpoint for end users (CLI + docs widget).
+
+Request JSON:
+
+```json
+{
+  "messages": [
+    {"role": "system", "content": "..." },
+    {"role": "user", "content": "..." }
+  ],
+  "k": 5,
+  "client": "cli",
+  "rag": "auto",
+  "sources": "auto"
+}
+```
+
+Response JSON:
+
+```json
+{
+  "answer": "...",
+  "sources": [
+    {"id": 1, "path": "molsysmt/docs/...", "section": "# ...", "label": "Some_Label", "url": "https://www.uibcdf.org/molsysmt/...#Some_Label"}
+  ]
+}
+```
+
+Notes:
+
+- `messages` is required and represents the full conversation history.
+- `k` is optional (default server-side) and controls how many snippets are retrieved when RAG is enabled.
+- `client` is optional (`"widget"` | `"cli"`). If omitted, treat as `"widget"`.
+- `rag` is optional (`"on"` | `"off"` | `"auto"`). `"auto"` uses an LLM router to decide.
+- `sources` is optional (`"on"` | `"off"` | `"auto"`). When enabled, `sources` align with citations `[1]`, `[2]`, ...
+
+Errors:
+
+- `400`: malformed request (e.g. missing messages)
+- `401`: invalid/missing API key (when enabled)
+- `500`: server-side failure
+
+### 2.2 `POST /v1/engine/chat`
+
+Purpose: internal model engine endpoint used by the chat API for generation and router calls.
 
 Request JSON:
 
@@ -58,66 +102,12 @@ Response JSON:
 Notes:
 
 - `messages` is required and represents the full conversation history.
-- `content` is a plain string with the assistant reply.
+- `content` is the assistant reply.
 - `generation` is optional and allows callers to override sampling parameters (useful for router/classifier calls).
 
 Errors:
 
 - `400`: malformed request (e.g. missing messages)
-- `401`: invalid/missing API key (when enabled)
-- `500`: server-side failure
-
-### 2.2 `POST /v1/docs-chat`
-
-Purpose: documentation chatbot endpoint used by the web widget and optionally
-by the CLI. This is the recommended endpoint for end-user chat, since it can
-use RAG and optionally return sources.
-
-Request JSON (single-turn):
-
-```json
-{
-  "query": "How do I ...?",
-  "k": 5
-}
-```
-
-Request JSON (multi-turn; optional for clients that support it):
-
-```json
-{
-  "messages": [
-    {"role": "user", "content": "..." }
-  ],
-  "k": 5,
-  "client": "cli",
-  "rag": "auto",
-  "sources": "auto"
-}
-```
-
-Response JSON:
-
-```json
-{
-  "answer": "...",
-  "sources": [
-    {"id": 1, "path": "molsysmt/docs/...", "section": "# ...", "label": "Some_Label", "url": "https://www.uibcdf.org/molsysmt/...#Some_Label"}
-  ]
-}
-```
-
-Notes:
-
-- `sources` is optional and may be an empty list (for example, if no snippets were retrieved).
-- Source ids align with bracketed citations in the answer (`[1]`, `[2]`, ...).
-- `client` is optional (`"widget"` | `"cli"`). If omitted, treat as `"widget"`.
-- `rag` is optional (`"on"` | `"off"` | `"auto"`). For CLI, `"auto"` uses an LLM router to decide; widget uses `"on"`.
-- `sources` is optional (`"on"` | `"off"` | `"auto"`). For CLI, `"auto"` decides whether to show citations/sources.
-
-Errors:
-
-- `400`: malformed request (missing query/messages)
 - `401`: invalid/missing API key (if enabled)
 - `500`: server-side failure
 

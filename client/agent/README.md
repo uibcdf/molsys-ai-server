@@ -4,7 +4,7 @@
 This directory contains the core logic of the MolSys-AI agent.
 
 Important: in the current project design, the **documentation chatbot**
-(`server/docs_chat/`) is not a tool-using agent. It is a read-only Q&A service
+(`server/chat_api/`) is not a tool-using agent. It is a read-only Q&A service
 that sends prompts (optionally augmented with retrieved docs) to the model
 server (`server/model_server/`).
 
@@ -48,7 +48,7 @@ executes tools on the user's machine.
 2. The local agent:
    - keeps the conversation state,
    - optionally executes local tools (with user approval),
-   - calls the remote model server (`POST /v1/chat`) for generation.
+   - calls the remote model engine server (`POST /v1/engine/chat`) for generation.
 3. Tool results are injected back into the conversation context and the agent
    asks the model to produce a final response.
 

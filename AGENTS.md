@@ -9,7 +9,7 @@ This repository hosts the server-side components of MolSys-AI for the UIBCDF Mol
 MolSysViewer, TopoMT, and related tools). The repository contains:
 
 - client-side code intended to be split out later (`client/agent/`, `client/cli/`),
-- server-side services (`server/model_server/`, `server/docs_chat/`, `server/rag/`),
+- server-side services (`server/model_server/`, `server/chat_api/`, `server/rag/`),
 - a docs widget asset (`server/web_widget/`),
 - internal design docs and ADRs (`dev/`),
 - training placeholders (`train/`).
@@ -87,7 +87,7 @@ check), use:
 
 - `./dev/smoke_vllm.sh`
 
-For the Sphinx widget end-to-end smoke (docs → widget → docs_chat → model_server),
+For the Sphinx widget end-to-end smoke (docs → widget → chat_api → model_server),
 use:
 
 - `./dev/smoke_widget.sh`
@@ -99,7 +99,7 @@ Docs chatbot (backend) can be run separately (typically in the dev environment)
 and pointed at the model server:
 
 ```bash
-MOLSYS_AI_MODEL_SERVER_URL=http://127.0.0.1:8001 uvicorn docs_chat.backend:app --host 127.0.0.1 --port 8000
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
 ```
 
 ## Testing conventions
@@ -122,7 +122,7 @@ See `tests/test_smoke.py` for the reference pattern.
   index on disk (default: `data/rag_index.pkl`).
 - Index building is implemented in `rag.build_index.build_index(source_dir, index_path)`.
 - Offline fallback: if `sentence-transformers` is not installed, embeddings fall back
-  to a deterministic hashing baseline. This keeps `docs_chat` runnable for smoke tests,
+  to a deterministic hashing baseline. This keeps `chat_api` runnable for smoke tests,
   but retrieval quality will be much lower. You can force this mode with:
   - `MOLSYS_AI_EMBEDDINGS=hashing`
 
@@ -134,7 +134,7 @@ See `tests/test_smoke.py` for the reference pattern.
 - ADRs: `dev/decisions/`
 - Status handoff: `checkpoint.md`
 - vLLM runbook: `dev/RUNBOOK_VLLM.md`
-- Docs chatbot backend: `server/docs_chat/README.md`
+- Chat API backend: `server/chat_api/README.md`
 - Sphinx widget pilot: `docs/index.md`
 - API deployment: `dev/DEPLOY_API.md`
 - Caddy + systemd examples: `dev/Caddyfile.example`, `dev/systemd/`, `dev/molsys-ai.env.example`
@@ -143,11 +143,11 @@ See `tests/test_smoke.py` for the reference pattern.
 
 ## Public API authentication (current policy)
 
-- `POST /v1/docs-chat` is intended for the public docs widget (CORS-enabled).
-  - It can be optionally protected with `MOLSYS_AI_DOCS_CHAT_API_KEYS` if needed.
-- `POST /v1/chat` is intended for CLI / non-browser clients and should be protected in production:
-  - set `MOLSYS_AI_CHAT_API_KEYS` on the model server,
-  - set `MOLSYS_AI_MODEL_SERVER_API_KEY` on docs_chat so it can call `/v1/chat`.
+- `POST /v1/chat` is the public chat API used by both the docs widget and the CLI.
+  - It can be optionally protected with `MOLSYS_AI_CHAT_API_KEYS` (note: widget keys are public).
+- `POST /v1/engine/chat` is the internal model engine endpoint and should not be exposed publicly:
+  - protect it with `MOLSYS_AI_ENGINE_API_KEYS`,
+  - set `MOLSYS_AI_ENGINE_API_KEY` on `chat_api` so it can call `http://127.0.0.1:8001/v1/engine/chat`.
 
 ## Large files (do not read)
 
@@ -165,5 +165,5 @@ locally downloaded model weights under `models/` via Hugging Face + git-lfs).
 The same applies to other large artifacts such as:
 
 - `data/rag_index.pkl` (generated RAG index)
-- `server/docs_chat/data/docs/` (generated corpus snapshot; thousands of files)
-- `server/docs_chat/data/rag_index.pkl` (generated docs RAG index)
+- `server/chat_api/data/docs/` (generated corpus snapshot; thousands of files)
+- `server/chat_api/data/rag_index.pkl` (generated docs RAG index)

@@ -23,9 +23,7 @@ from .core import MolSysAIAgent
 from .model_client import HTTPModelClient
 
 
-DEFAULT_MODEL_SERVER_URL = os.environ.get(
-    "MOLSYS_AI_MODEL_SERVER_URL", "http://127.0.0.1:8000"
-)
+DEFAULT_ENGINE_URL = os.environ.get("MOLSYS_AI_ENGINE_URL", "http://127.0.0.1:8001")
 
 
 def create_notebook_agent(
@@ -37,15 +35,14 @@ def create_notebook_agent(
     Parameters
     ----------
     server_url:
-        Base URL of the MolSys-AI model server. If omitted, the value from
-        ``MOLSYS_AI_MODEL_SERVER_URL`` is used, falling back to
-        ``http://127.0.0.1:8000``.
+        Base URL of the MolSys-AI model engine server. If omitted, the value from
+        ``MOLSYS_AI_ENGINE_URL`` is used, falling back to ``http://127.0.0.1:8001``.
     use_planner:
         Currently unused; kept for future expansion when alternative planners
         may be plugged in. For now, the default `SimplePlanner` is always used.
     """
 
-    base_url = (server_url or DEFAULT_MODEL_SERVER_URL).rstrip("/")
+    base_url = (server_url or DEFAULT_ENGINE_URL).rstrip("/")
     client = HTTPModelClient(base_url=base_url)
     agent = MolSysAIAgent(model_client=client)
     return agent
@@ -177,4 +174,3 @@ def inject_workflow_into_current_notebook(*args: object, **kwargs: object) -> No
         "In-place notebook editing is not implemented yet. "
         "Use `create_workflow_notebook` to generate a new notebook instead."
     )
-

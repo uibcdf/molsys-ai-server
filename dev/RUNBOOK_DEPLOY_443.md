@@ -8,9 +8,9 @@ This runbook is the “day we get port 443” checklist to deploy:
 Target architecture (recommended):
 
 - Caddy terminates TLS on `:443` and reverse-proxies:
-  - `/v1/docs-chat` → `127.0.0.1:8000` (public docs widget; CORS enabled)
-- `docs_chat` and `model_server` run as systemd services bound to `127.0.0.1`.
-  - `docs_chat` calls the model server privately over `http://127.0.0.1:8001/v1/chat`.
+  - `/v1/chat` → `127.0.0.1:8000` (public chat API; CORS enabled for the widget)
+- `chat_api` and `model_server` run as systemd services bound to `127.0.0.1`.
+  - `chat_api` calls the model engine server privately over `http://127.0.0.1:8001/v1/engine/chat`.
 
 ## 0) Prerequisites
 
@@ -67,8 +67,9 @@ sudo nano /etc/molsys-ai/molsys-ai.env
 Set (at minimum):
 
 - `MOLSYS_AI_MODEL_CONFIG` (path to the YAML file for `model_server`)
-- `MOLSYS_AI_CHAT_API_KEYS` (generate a strong key)
-- `MOLSYS_AI_MODEL_SERVER_API_KEY` (one of the above keys)
+- `MOLSYS_AI_ENGINE_API_KEYS` (generate a strong key for the internal engine endpoint)
+- `MOLSYS_AI_CHAT_API_KEYS` (optional: protect the public chat API)
+- `MOLSYS_AI_ENGINE_API_KEY` (a key allowed by `MOLSYS_AI_ENGINE_API_KEYS`; used by `chat_api`)
 - `MOLSYS_AI_CORS_ORIGINS` (include `https://uibcdf.org`)
 
 ### 2.3 Model server YAML config
@@ -109,7 +110,7 @@ Copy the example units:
 
 ```bash
 sudo cp dev/systemd/molsys-ai-model.service.example /etc/systemd/system/molsys-ai-model.service
-sudo cp dev/systemd/molsys-ai-docs-chat.service.example /etc/systemd/system/molsys-ai-docs-chat.service
+sudo cp dev/systemd/molsys-ai-chat-api.service.example /etc/systemd/system/molsys-ai-chat-api.service
 sudo systemctl daemon-reload
 ```
 
@@ -123,9 +124,9 @@ Start services:
 
 ```bash
 sudo systemctl enable --now molsys-ai-model
-sudo systemctl enable --now molsys-ai-docs-chat
+sudo systemctl enable --now molsys-ai-chat-api
 sudo systemctl status molsys-ai-model --no-pager
-sudo systemctl status molsys-ai-docs-chat --no-pager
+sudo systemctl status molsys-ai-chat-api --no-pager
 ```
 
 ### 3.1 Optional: schedule periodic corpus refresh (weekly)
@@ -142,7 +143,7 @@ sudo systemctl enable --now molsys-ai-rag-refresh.timer
 sudo systemctl list-timers --all | grep molsys-ai-rag-refresh
 ```
 
-This runs `dev/sync_rag_corpus.py` and then restarts `molsys-ai-docs-chat` so it loads the new index.
+This runs `dev/sync_rag_corpus.py` and then restarts `molsys-ai-chat-api` so it loads the new index.
 
 ## 4) Restart Caddy and verify end-to-end
 
@@ -164,17 +165,17 @@ From a remote machine (public):
 
 ```bash
 curl -fsS https://api.uibcdf.org/healthz
-curl -fsS https://api.uibcdf.org/healthz/docs-chat
+curl -fsS https://api.uibcdf.org/healthz/chat
 curl -fsS https://api.uibcdf.org/healthz/model
-curl -fsS -X POST https://api.uibcdf.org/v1/docs-chat \
+curl -fsS -X POST https://api.uibcdf.org/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"query":"ping","k":1}'
 ```
 
-If `/v1/docs-chat` is protected with API keys, test with a valid key:
+If `/v1/chat` is protected with API keys, test with a valid key:
 
 ```bash
-curl -fsS -X POST https://api.uibcdf.org/v1/docs-chat \
+curl -fsS -X POST https://api.uibcdf.org/v1/chat \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer <YOUR_KEY>' \
   -d '{"messages":[{"role":"user","content":"Reply only: OK"}],"client":"cli","rag":"off","sources":"off"}'
@@ -182,7 +183,7 @@ curl -fsS -X POST https://api.uibcdf.org/v1/docs-chat \
 
 ## 5) Operational notes
 
-- Keep `model_server` and `docs_chat` bound to `127.0.0.1`.
+- Keep `model_server` and `chat_api` bound to `127.0.0.1`.
 - Only Caddy listens on public interfaces.
-- `/v1/docs-chat` is public by design; plan rate limiting at the proxy layer.
+- `/v1/chat` is public by design; plan rate limiting at the proxy layer.
 - If GPU memory gets stuck after crashes, check for stray `VLLM::EngineCore` processes.

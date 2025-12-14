@@ -2,7 +2,7 @@
 
 This directory contains the FastAPI-based model server for MolSys-AI.
 
-For the MVP, the server exposes a `/v1/chat` endpoint and can use:
+For the MVP, the server exposes a `/v1/engine/chat` endpoint and can use:
 
 - a **stub backend** that echoes the last user message (default), or
 - a **vLLM backend** that runs a local (or Hub) model, typically an AWQ
@@ -17,18 +17,18 @@ See `config.example.yaml` for the expected structure.
 
 ## Authentication (recommended for public deployment)
 
-`POST /v1/chat` can be protected with a simple API key allowlist.
+`POST /v1/engine/chat` can be protected with a simple API key allowlist.
 
 Set:
 
-- `MOLSYS_AI_CHAT_API_KEYS` as a comma-separated list of accepted keys.
+- `MOLSYS_AI_ENGINE_API_KEYS` as a comma-separated list of accepted keys.
 
 When this env var is set, clients must send either:
 
 - `Authorization: Bearer <key>`, or
 - `X-API-Key: <key>`.
 
-If `MOLSYS_AI_CHAT_API_KEYS` is empty/unset, `/v1/chat` is open (dev default).
+If `MOLSYS_AI_ENGINE_API_KEYS` is empty/unset, `/v1/engine/chat` is open (dev default).
 
 ## Running the stub backend (no real model)
 
@@ -103,5 +103,5 @@ memory is not implemented).
 Older ADRs describe a llama.cpp / GGUF backend. The code may still contain
 placeholders for it, but the current baseline is vLLM + AWQ (see ADR-015/016/017).
 
-The docs chatbot backend (`server/docs_chat/backend.py`) talks to whichever backend is
+The public chat API (`server/chat_api/backend.py`) talks to whichever backend is
 configured here via HTTP.

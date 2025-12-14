@@ -71,10 +71,10 @@ docs/_build/
 # Model server configuration (can contain sensitive info, typically managed outside VCS)
 server/model_server/config.yaml
 
-# docs_chat generated corpus + index (snapshotted from sibling repos)
-server/docs_chat/data/docs/
-server/docs_chat/data/rag_index.pkl
-server/docs_chat/data/anchors.json
+# chat_api generated corpus + index (snapshotted from sibling repos)
+server/chat_api/data/docs/
+server/chat_api/data/rag_index.pkl
+server/chat_api/data/anchors.json
 
 # Temporary build script
 _build_index_script.py
