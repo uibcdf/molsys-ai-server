@@ -220,6 +220,7 @@ MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
 MOLSYS_AI_DOCS_DIR=/tmp/molsys_ai_docs_smoke \
 MOLSYS_AI_DOCS_INDEX=/tmp/molsys_ai_docs_smoke.pkl \
 MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+MOLSYS_AI_EMBEDDINGS_DEVICE=cpu \
 uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
 ```
 

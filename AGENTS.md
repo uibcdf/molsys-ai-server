@@ -5,7 +5,7 @@ Start here.
 
 ## Project summary
 
-This repository hosts the server-side components of MolSys-AI for the UIBCDF MolSys* ecosystem (MolSysMT,
+This repository hosts the server-side components of MolSys-AI for the UIBCDF MolSysSuite tools (MolSysMT,
 MolSysViewer, TopoMT, and related tools). The repository contains:
 
 - client-side code intended to be split out later (`client/agent/`, `client/cli/`),
@@ -43,7 +43,7 @@ Note: on some HPC systems, `conda` plugins can fail with `PermissionError`
   - `pip install -e ".[dev]"` for server/RAG/docs/test tooling.
   - the docs build prefers `myst-nb` (with a fallback to `myst-parser`).
 
-Local MolSys* dependencies (`molsysmt`, `molsysviewer`, `topomt`, etc.) may be
+Local MolSysSuite dependencies (`molsysmt`, `molsysviewer`, `topomt`, etc.) may be
 developed in sibling repos. Keep them commented out in `environment.yml` if you
 install them manually from source, to avoid overwriting your dev versions with
 Conda channel installs.
@@ -121,10 +121,19 @@ See `tests/test_smoke.py` for the reference pattern.
 - The current MVP uses sentence-transformers embeddings and stores a pickled
   index on disk (default: `data/rag_index.pkl`).
 - Index building is implemented in `rag.build_index.build_index(source_dir, index_path)`.
+- The corpus sync script `dev/sync_rag_corpus.py` snapshots upstream docs/tutorials into
+  `server/chat_api/data/docs/`. Large Markdown pages are truncated (instead of skipped)
+  and notebooks are compacted (outputs stripped) to fit size limits.
+- The sync always writes a coverage summary to `server/chat_api/data/docs/_coverage.json`.
 - Offline fallback: if `sentence-transformers` is not installed, embeddings fall back
   to a deterministic hashing baseline. This keeps `chat_api` runnable for smoke tests,
   but retrieval quality will be much lower. You can force this mode with:
   - `MOLSYS_AI_EMBEDDINGS=hashing`
+
+Coverage audit:
+
+- After syncing, run `python dev/audit_rag_corpus.py --rescan-sources` to quantify what
+  was included/truncated and whether API-surface extraction hit limits.
 
 ## Documentation pointers
 
@@ -137,6 +146,7 @@ See `tests/test_smoke.py` for the reference pattern.
 - Chat API backend: `server/chat_api/README.md`
 - Sphinx widget pilot: `docs/index.md`
 - API deployment: `dev/DEPLOY_API.md`
+- Benchmarking guide: `dev/BENCHMARKING.md`
 - Caddy + systemd examples: `dev/Caddyfile.example`, `dev/systemd/`, `dev/molsys-ai.env.example`
 - 443 deployment runbook: `dev/RUNBOOK_DEPLOY_443.md`
 - API stability contract: `dev/API_CONTRACT_V1.md`

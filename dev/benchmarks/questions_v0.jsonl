@@ -1,0 +1,14 @@
+{"id":"q1","query":"How do I install MolSysSuite tools? Give a short answer (max 6 lines) and include links. Cite sources.","want_sources":true,"rag":"on","sources":"on"}
+{"id":"q2","query":"What is the purpose of MolSysMT? Reply in 2-3 sentences and cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["molsysmt"]}
+{"id":"q3","query":"How can I load a PDB by id (example: 1VII) and then print basic system info? Provide a short Python snippet and cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["1vii"]}
+{"id":"q4","query":"Where is the documentation for MolSysViewer published? Reply with the URL only, and cite it.","want_sources":true,"rag":"on","sources":"on","contains":["uibcdf.org/molsysviewer"]}
+{"id":"q5","query":"Explain how to compute contacts between CA atoms within 10 angstroms for PDB 1VII. Provide a script snippet. Cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["10"],"not_contains":["I executed","I ran"]}
+{"id":"q6","query":"How do I install MolSysMT? Give a short answer and include links. Cite sources.","want_sources":true,"rag":"on","sources":"on"}
+{"id":"q7","query":"What is MolSysViewer? Reply in 1-2 sentences and cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["molsysviewer"]}
+{"id":"q8","query":"Which MolSysSuite tool is used to compute protein pockets? Reply with just the tool/package name (no extra text) and cite sources.","want_sources":true,"rag":"on","sources":"on"}
+{"id":"q9","query":"Is there a method to calculate RMSD between two structures in MolSysMT? Reply with a short Python snippet and cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["rmsd"]}
+{"id":"q10","query":"What is a file with the extension .h5msm? Reply in 1-2 sentences and cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["h5msm"]}
+{"id":"q11","query":"Can MolSysMT load topologies from OpenMM? Answer yes/no first, then 1 short sentence, and cite sources.","want_sources":true,"rag":"on","sources":"on","contains_any":["yes","no"]}
+{"id":"q12","query":"What is an entity in MolSysMT? Reply in 1-2 sentences and cite sources.","want_sources":true,"rag":"on","sources":"on","contains":["entity"]}
+{"id":"q13","query":"What is the default type of chain_id in molsysmt.Topology? If you cannot find it in the docs, reply with NOT_DOCUMENTED and cite sources.","want_sources":true,"rag":"on","sources":"on","contains_any":["not_documented","str","int"]}
+{"id":"q14","query":"How can I minimize the energy of a molecule with MolSysMT? Provide a short snippet and cite sources.","want_sources":true,"rag":"on","sources":"on","contains_any":["potential_energy_minimization","molecular_mechanics"]}

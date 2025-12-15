@@ -19,7 +19,7 @@ This document lists current constraints and assumptions for the initial phase of
 - Foundational base model: **Llama-3.1-8B-Instruct** (see ADR-017).
 - Strategy:
   - Phase 1: use the base model with RAG + local tools (executed by the client-side agent).
-  - Phase 2: add LoRA/QLoRA specialization for the MolSys* ecosystem.
+  - Phase 2: add LoRA/QLoRA specialization for MolSysSuite.
 - All models and LoRAs are published under the Hugging Face **organization `uibcdf`**.
 
 ## Serving

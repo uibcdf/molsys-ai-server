@@ -48,6 +48,13 @@ DOCS_INDEX_PATH = Path(
     )
 ).expanduser()
 
+PROJECT_INDEX_DIR = Path(
+    os.environ.get(
+        "MOLSYS_AI_PROJECT_INDEX_DIR",
+        str(Path(__file__).resolve().parent / "data" / "indexes"),
+    )
+).expanduser()
+
 _DEFAULT_ENGINE_URL = "http://127.0.0.1:8001"
 ENGINE_URL = os.environ.get("MOLSYS_AI_ENGINE_URL", _DEFAULT_ENGINE_URL)
 ENGINE_API_KEY = (os.environ.get("MOLSYS_AI_ENGINE_API_KEY") or "").strip() or None
@@ -55,9 +62,13 @@ ENGINE_API_KEY = (os.environ.get("MOLSYS_AI_ENGINE_API_KEY") or "").strip() or N
 _DEFAULT_ANCHORS_PATH = Path(__file__).resolve().parent / "data" / "anchors.json"
 DOCS_ANCHORS_PATH = Path(os.environ.get("MOLSYS_AI_DOCS_ANCHORS", str(_DEFAULT_ANCHORS_PATH))).expanduser()
 
+_DEFAULT_SYMBOLS_PATH = DOCS_SOURCE_DIR / "_symbols.json"
+SYMBOLS_PATH = Path(os.environ.get("MOLSYS_AI_SYMBOLS_PATH", str(_DEFAULT_SYMBOLS_PATH))).expanduser()
+
 _CHAT_KEYS_ENV_VAR = "MOLSYS_AI_CHAT_API_KEYS"
 
 _DOCS_INDEX: list[Document] = []
+_PROJECT_INDICES: dict[str, list[Document]] = {}
 _RATE_STATE: dict[tuple[str, int], int] = {}
 
 
@@ -136,6 +147,293 @@ def _load_anchors() -> dict[str, Any] | None:
         return json.loads(DOCS_ANCHORS_PATH.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+@lru_cache()
+def _load_symbol_registry() -> dict[str, Any] | None:
+    if not SYMBOLS_PATH.exists():
+        return None
+    try:
+        return json.loads(SYMBOLS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+@lru_cache()
+def _symbols_for_project(project: str) -> set[str]:
+    reg = _load_symbol_registry()
+    if not reg:
+        return set()
+    projects = reg.get("projects")
+    if not isinstance(projects, dict):
+        return set()
+    entry = projects.get(project)
+    if not isinstance(entry, dict):
+        return set()
+    symbols = entry.get("symbols")
+    if not isinstance(symbols, list):
+        return set()
+    return {str(s) for s in symbols if isinstance(s, str) and s}
+
+
+def _extract_import_aliases(text: str) -> dict[str, str]:
+    """Return a mapping of import aliases to canonical MolSysSuite project names."""
+    aliases: dict[str, str] = {}
+    for project in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
+        m = re.findall(
+            rf"^\s*import\s+{project}\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$",
+            text,
+            flags=re.M,
+        )
+        for a in m:
+            aliases[a] = project
+        m2 = re.findall(
+            rf"^\s*from\s+{project}\s+import\s+.+?\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$",
+            text,
+            flags=re.M,
+        )
+        for a in m2:
+            aliases[a] = project
+    return aliases
+
+
+def _extract_candidate_symbols(text: str) -> set[str]:
+    """Extract dotted-path API symbol candidates from model output."""
+    s = text or ""
+    candidates: set[str] = set()
+    for t in re.findall(r"`([^`]+)`", s):
+        for sym in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", t):
+            candidates.add(sym)
+    for sym in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", s):
+        candidates.add(sym)
+    return candidates
+
+
+def _resolve_alias_symbol(sym: str, aliases: dict[str, str]) -> str:
+    head, *rest = sym.split(".")
+    if head in aliases:
+        return ".".join([aliases[head], *rest])
+    return sym
+
+
+def _unknown_tool_symbols(answer: str) -> list[str]:
+    """Return a list of unknown MolSysSuite API symbols mentioned in `answer`."""
+    aliases = _extract_import_aliases(answer)
+    candidates = _extract_candidate_symbols(answer)
+    unknown: set[str] = set()
+
+    for sym in candidates:
+        resolved = _resolve_alias_symbol(sym, aliases)
+        project = resolved.split(".", 1)[0]
+        if project not in {"molsysmt", "molsysviewer", "pyunitwizard", "topomt"}:
+            continue
+        symbols, prefixes = _symbol_sets_for_project(project)
+        if not symbols and not prefixes:
+            continue
+        if resolved in symbols or resolved in prefixes:
+            continue
+        unknown.add(resolved)
+
+    return sorted(unknown)
+
+
+@lru_cache()
+def _symbol_sets_for_project(project: str) -> tuple[set[str], set[str]]:
+    symbols = _symbols_for_project(project)
+    prefixes: set[str] = set()
+    for s in symbols:
+        parts = s.split(".")
+        # Add dotted prefixes so mentions like `molsysmt.structure` validate even if the
+        # registry contains only deeper symbols (e.g. `molsysmt.structure.get_rmsd`).
+        for i in range(1, len(parts)):
+            prefixes.add(".".join(parts[:i]))
+    return symbols, prefixes
+
+
+def _is_api_surface_doc(doc: Document) -> bool:
+    raw = str(doc.metadata.get("path") or "")
+    if not raw:
+        return False
+    p = raw.replace("\\", "/")
+    return "/api_surface/" in p
+
+
+def _is_symbol_card_doc(doc: Document) -> bool:
+    kind = str(doc.metadata.get("kind") or "").strip().lower()
+    if kind:
+        return kind == "symbol_card"
+    raw = str(doc.metadata.get("path") or "")
+    p = raw.replace("\\", "/")
+    return "/symbol_cards/" in p
+
+
+def _is_recipe_doc(doc: Document) -> bool:
+    kind = str(doc.metadata.get("kind") or "").strip().lower()
+    if kind:
+        return kind == "recipe"
+    raw = str(doc.metadata.get("path") or "")
+    p = raw.replace("\\", "/")
+    return "/recipes/" in p
+
+
+def _looks_like_api_question(query: str) -> bool:
+    s = (query or "").lower()
+    if any(p in s for p in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt")):
+        return True
+    if re.search(r"\b(function|method|class|signature|argument|parameter|keyword|kwarg|import)\b", s):
+        return True
+    # Identifier-ish query hints.
+    if re.search(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+\\b", s):
+        return True
+    if "```" in s or "()" in s:
+        return True
+    return False
+
+
+def _dedupe_docs(docs: list[Document]) -> list[Document]:
+    seen: set[tuple[str, str, str, str]] = set()
+    out: list[Document] = []
+    for d in docs:
+        key = (
+            str(d.metadata.get("path") or ""),
+            str(d.metadata.get("section") or ""),
+            str(d.metadata.get("label") or ""),
+            (d.content or "")[:200],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(d)
+    return out
+
+
+def _select_docs_for_api_question(candidates: list[Document], *, k: int) -> list[Document]:
+    """Select a balanced set of sources for API-heavy questions.
+
+    Preference order:
+      1) symbol cards (per-symbol docs)
+      2) recipes (tests/notebooks)
+      3) api_surface (per-module docs)
+      4) narrative docs
+    """
+
+    if not candidates or k <= 0:
+        return []
+
+    symbol_cards = [d for d in candidates if _is_symbol_card_doc(d)]
+    recipes = [d for d in candidates if _is_recipe_doc(d)]
+    api_surface = [d for d in candidates if _is_api_surface_doc(d)]
+    rest = [d for d in candidates if d not in symbol_cards and d not in recipes and d not in api_surface]
+
+    # Quotas tuned for small k (default k=5).
+    n_symbol = min(2, k)
+    n_recipe = min(2, max(k - n_symbol, 0))
+    n_api = min(1, max(k - n_symbol - n_recipe, 0))
+
+    picked: list[Document] = []
+    picked.extend(symbol_cards[:n_symbol])
+    picked.extend(recipes[:n_recipe])
+    picked.extend(api_surface[:n_api])
+    picked.extend(rest)
+    picked = _dedupe_docs(picked)
+    return picked[:k]
+
+
+def _candidate_valid_symbols(answer: str) -> list[str]:
+    aliases = _extract_import_aliases(answer)
+    out: set[str] = set()
+    for sym in _extract_candidate_symbols(answer):
+        resolved = _resolve_alias_symbol(sym, aliases)
+        project = resolved.split(".", 1)[0]
+        if project not in {"molsysmt", "molsysviewer", "pyunitwizard", "topomt"}:
+            continue
+        symbols, prefixes = _symbol_sets_for_project(project)
+        if not symbols and not prefixes:
+            continue
+        if resolved in symbols or resolved in prefixes:
+            out.add(resolved)
+    return sorted(out)
+
+
+def _retrieve_api_surface_snippets(symbol: str, *, k: int) -> list[Document]:
+    """Retrieve symbol-focused snippets relevant to an API symbol (best-effort)."""
+    if k <= 0:
+        return []
+    project = symbol.split(".", 1)[0]
+    idx = _PROJECT_INDICES.get(project) or _DOCS_INDEX
+    # Pull more candidates and filter down to api_surface sources.
+    candidates = retrieve(symbol, idx, k=max(k * 6, k))
+    symbol_cards = [d for d in candidates if _is_symbol_card_doc(d)]
+    api = [d for d in candidates if _is_api_surface_doc(d)]
+    return (symbol_cards or api or candidates)[:k]
+
+
+def _build_reread_prompt(
+    *,
+    question: str,
+    draft_answer: str,
+    context_block: str,
+    api_block: str,
+    show_sources: bool,
+) -> list[dict[str, str]]:
+    system = (
+        "You are MolSys-AI, a specialist assistant for the UIBCDF MolSysSuite ecosystem.\n"
+        "Rewrite the answer to ensure API correctness.\n"
+        "- Use the term 'MolSysSuite' (never 'MolSys*').\n"
+        "- Use the API excerpts to ensure correct symbol names and usage.\n"
+        "- If you cannot confirm a symbol/behavior from the excerpts, say `NOT_DOCUMENTED`.\n"
+    )
+    if show_sources:
+        system += "- Keep bracket citations like [1], [2] aligned with the numbered sources.\n"
+    system += "Return ONLY the final answer text.\n"
+
+    prefix = "Documentation excerpts:\n\n" if show_sources else "Documentation excerpts (do not cite):\n\n"
+    api_prefix = "\n\nAPI excerpts (do not cite; for correctness):\n\n"
+    return [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                f"{prefix}{context_block}\n\n"
+                f"Question: {question}\n\n"
+                f"Draft answer:\n{draft_answer}\n"
+                f"{api_prefix}{api_block}\n"
+            ),
+        },
+    ]
+
+
+def _build_symbol_fix_prompt(
+    *,
+    question: str,
+    draft_answer: str,
+    context_block: str,
+    unknown_symbols: list[str],
+    show_sources: bool,
+) -> list[dict[str, str]]:
+    system = (
+        "You are MolSys-AI, a specialist assistant for the UIBCDF MolSysSuite ecosystem.\n"
+        "You MUST NOT invent API symbols.\n"
+        "The following API symbols are NOT VALID and must not appear in your answer:\n"
+        + "\n".join(f"- {s}" for s in unknown_symbols)
+        + "\n\n"
+        "Rewrite the draft answer so that:\n"
+        "- you remove or replace invalid symbols with valid alternatives grounded in the provided excerpts,\n"
+        "- if you cannot find a valid alternative, say `NOT_DOCUMENTED` and explain what is missing,\n"
+        "- you use the term 'MolSysSuite' (never 'MolSys*'),\n"
+    )
+    if show_sources:
+        system += "- keep bracket citations like [1], [2] aligned with the sources list.\n"
+    system += "Return ONLY the final answer text.\n"
+
+    prefix = "Documentation excerpts:\n\n" if show_sources else "Documentation excerpts (do not cite):\n\n"
+    return [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": f"{prefix}{context_block}\n\nQuestion: {question}\n\nDraft answer:\n{draft_answer}\n",
+        },
+    ]
 
 
 def require_chat_api_key(request: Request) -> None:
@@ -342,6 +640,8 @@ def _build_router_prompt(user_text: str) -> list[dict[str, str]]:
 def _default_system_prompt() -> str:
     return (
         "You are MolSys-AI, a specialist assistant for the UIBCDF MolSysSuite ecosystem.\n"
+        "Use the term 'MolSysSuite'.\n"
+        "Never use the term 'MolSys*'.\n"
         "Prefer precise, actionable answers. If you are not sure, ask a clarifying question.\n"
         "Do not invent APIs, flags, or behaviors.\n"
     )
@@ -350,6 +650,47 @@ def _default_system_prompt() -> str:
 def _user_explicitly_wants_sources(text: str) -> bool:
     s = (text or "").lower()
     return bool(re.search(r"\b(cite|citation|citations|source|sources|link|links|reference|references)\b", s))
+
+
+def _has_bracket_citations(text: str) -> bool:
+    return bool(re.search(r"\[\d+\]", text or ""))
+
+
+def _infer_project_hint(query: str) -> str | None:
+    q = (query or "").lower()
+    for name in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
+        if name in q:
+            return name
+    return None
+
+
+def _doc_project(doc: Document) -> str | None:
+    raw = str(doc.metadata.get("path") or "").strip()
+    if not raw:
+        return None
+    try:
+        rel = Path(raw).resolve().relative_to(DOCS_SOURCE_DIR.resolve())
+    except Exception:
+        return None
+    if not rel.parts:
+        return None
+    return rel.parts[0]
+
+def _inject_citations(answer: str, sources: list[Source]) -> str:
+    """Best-effort: ensure the answer contains at least one bracket citation.
+
+    Some models may omit citations even when asked. As a last resort, append a
+    minimal citation marker so the `sources` list is not orphaned.
+    """
+
+    if _has_bracket_citations(answer):
+        return answer
+    if not sources:
+        return answer
+    suffix = " [1]"
+    if answer.rstrip().endswith((".", "!", "?", "]")):
+        return answer.rstrip() + suffix
+    return answer.rstrip() + suffix
 
 
 @app.get("/healthz")
@@ -434,7 +775,25 @@ async def chat(
     if show_sources and not use_rag:
         use_rag = True
 
-    docs = retrieve(query, _DOCS_INDEX, k=req_k) if use_rag else []
+    docs: list[Document] = []
+    if use_rag:
+        # Tool-aware filtering: when the user names a specific MolSysSuite tool
+        # (e.g. MolSysMT), prefer sources from that project to reduce cross-project
+        # mixing.
+        hint = _infer_project_hint(query)
+        is_api_q = _looks_like_api_question(query)
+
+        if hint and hint in _PROJECT_INDICES:
+            idx = _PROJECT_INDICES[hint]
+            candidates = retrieve(query, idx, k=max(req_k * 8, 40) if is_api_q else req_k)
+        else:
+            candidates = retrieve(query, _DOCS_INDEX, k=max(req_k * 8, 40) if is_api_q else max(req_k * 4, req_k))
+            if hint:
+                filtered = [d for d in candidates if _doc_project(d) == hint]
+                candidates = filtered or candidates
+
+        candidates = _dedupe_docs(candidates)
+        docs = _select_docs_for_api_question(candidates, k=req_k) if is_api_q else candidates[:req_k]
 
     context_lines: list[str] = []
     sources: list[Source] = []
@@ -467,6 +826,7 @@ async def chat(
             + "\nAnswer user questions using ONLY the provided documentation excerpts.\n"
             + "Cite sources by including bracketed numbers like [1] or [2] in your answer.\n"
             + "If the answer cannot be inferred from the excerpts, say so explicitly.\n"
+            + "If you include code, only use APIs that appear in the excerpts; otherwise provide a template with clear TODO placeholders.\n"
         )
     elif use_rag and show_sources:
         system_prompt = (
@@ -474,6 +834,7 @@ async def chat(
             + "\nUse the provided documentation excerpts to answer.\n"
             + "Cite sources by including bracketed numbers like [1] or [2] in your answer.\n"
             + "If the answer cannot be inferred from the excerpts, say so explicitly.\n"
+            + "Do not guess function/module names. If you cannot find the exact API in the excerpts, say NOT_DOCUMENTED and point to the most relevant doc URLs.\n"
         )
     elif use_rag and not show_sources:
         system_prompt = (
@@ -481,6 +842,7 @@ async def chat(
             + "\nUse the provided documentation excerpts to answer.\n"
             + "Do NOT include bracketed citations like [1]. Do NOT mention sources.\n"
             + "If the answer cannot be inferred from the excerpts, say so explicitly.\n"
+            + "Do not guess function/module names.\n"
         )
     system_msg = {
         "role": "system",
@@ -500,12 +862,154 @@ async def chat(
 
     client = HTTPModelClient(base_url=ENGINE_URL, api_key=ENGINE_API_KEY)
     answer = client.generate(messages)
+
+    # Best-effort enforcement: when sources are enabled, ensure the answer includes
+    # bracket citations like [1]. This avoids confusing UX where a sources list is
+    # returned but the answer does not reference it.
+    enforce_citations = _env_bool("MOLSYS_AI_CHAT_ENFORCE_CITATIONS", True)
+    if enforce_citations and show_sources and sources and not _has_bracket_citations(answer):
+        rewrite_system = (
+            system_prompt.strip()
+            + "\nYou MUST include bracketed citations like [1] referencing the provided excerpts.\n"
+            + "If you cannot answer, say so, but still cite the most relevant excerpt(s).\n"
+        )
+        rewrite_messages = [
+            {"role": "system", "content": rewrite_system},
+            {
+                "role": "user",
+                "content": (
+                    "Documentation excerpts:\n\n"
+                    f"{context_block}\n\n"
+                    f"Question: {query}\n\n"
+                    "Draft answer (missing citations):\n"
+                    f"{answer}\n\n"
+                    "Rewrite the answer so it includes citations like [1]. Keep it concise."
+                ),
+            },
+        ]
+        rewritten = client.generate(
+            rewrite_messages,
+            generation={"temperature": 0.0, "top_p": 1.0, "max_tokens": 512},
+        )
+        if _has_bracket_citations(rewritten):
+            answer = rewritten
+        else:
+            # Fallback: avoid returning a sources list without any citation markers.
+            answer = _inject_citations(answer, sources)
+
+    # Symbol verification (best-effort): prevent invented MolSysSuite API names.
+    if _env_bool("MOLSYS_AI_CHAT_VERIFY_SYMBOLS", True):
+        unknown = _unknown_tool_symbols(answer)
+        if unknown:
+            try:
+                fix_messages = _build_symbol_fix_prompt(
+                    question=query,
+                    draft_answer=answer,
+                    context_block=context_block,
+                    unknown_symbols=unknown,
+                    show_sources=show_sources,
+                )
+                fixed = client.generate(
+                    fix_messages,
+                    generation={"temperature": 0.0, "top_p": 1.0, "max_tokens": 800},
+                )
+                fixed = (fixed or "").strip()
+                if fixed:
+                    answer = fixed
+            except Exception:
+                pass
+
+            still_unknown = _unknown_tool_symbols(answer)
+            if still_unknown:
+                answer = (
+                    answer.rstrip()
+                    + "\n\nNOT_DOCUMENTED: I could not verify these API symbols in the available corpus: "
+                    + ", ".join(still_unknown)
+                )
+            # Ensure citations aren't accidentally dropped by the rewrite/append.
+            if enforce_citations and show_sources and sources and not _has_bracket_citations(answer):
+                answer = _inject_citations(answer, sources)
+
+    # Symbol re-read (best-effort): if the answer mentions valid API symbols, retrieve
+    # their API-surface snippets and force a rewrite for accuracy.
+    if use_rag and _env_bool("MOLSYS_AI_CHAT_REREAD_SYMBOLS", True):
+        max_syms = max(_env_int("MOLSYS_AI_CHAT_REREAD_MAX_SYMBOLS", 2), 0)
+        k_per = max(_env_int("MOLSYS_AI_CHAT_REREAD_K_PER_SYMBOL", 2), 0)
+        if max_syms > 0 and k_per > 0:
+            candidates = _candidate_valid_symbols(answer)[:max_syms]
+            api_docs: list[Document] = []
+            for s in candidates:
+                api_docs.extend(_retrieve_api_surface_snippets(s, k=k_per))
+            # De-duplicate by path+section+label+content prefix.
+            seen = set()
+            uniq: list[Document] = []
+            for d in api_docs:
+                key = (
+                    str(d.metadata.get("path") or ""),
+                    str(d.metadata.get("section") or ""),
+                    str(d.metadata.get("label") or ""),
+                    (d.content or "")[:200],
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                uniq.append(d)
+            api_docs = uniq[: max_syms * k_per]
+
+            if api_docs:
+                api_lines: list[str] = []
+                for d in api_docs:
+                    try:
+                        rel = Path(str(d.metadata.get("path") or "")).resolve().relative_to(DOCS_SOURCE_DIR.resolve())
+                        p = str(rel)
+                    except Exception:
+                        p = str(d.metadata.get("path") or "unknown")
+                    api_lines.append(f"- {p}\n{d.content}\n")
+                api_block = "\n".join(api_lines).strip() or "(no API excerpts found)"
+                try:
+                    reread_messages = _build_reread_prompt(
+                        question=query,
+                        draft_answer=answer,
+                        context_block=context_block,
+                        api_block=api_block,
+                        show_sources=show_sources,
+                    )
+                    reread = client.generate(
+                        reread_messages,
+                        generation={"temperature": 0.0, "top_p": 1.0, "max_tokens": 900},
+                    )
+                    reread = (reread or "").strip()
+                    if reread:
+                        answer = reread
+                except Exception:
+                    pass
+
+                # Re-run symbol verification after the rewrite.
+                if _env_bool("MOLSYS_AI_CHAT_VERIFY_SYMBOLS", True):
+                    still_unknown = _unknown_tool_symbols(answer)
+                    if still_unknown:
+                        answer = (
+                            answer.rstrip()
+                            + "\n\nNOT_DOCUMENTED: I could not verify these API symbols in the available corpus: "
+                            + ", ".join(still_unknown)
+                        )
+
+                # Re-enforce citations if needed (the rewrite might remove them).
+                if enforce_citations and show_sources and sources and not _has_bracket_citations(answer):
+                    answer = _inject_citations(answer, sources)
+
+    # Final safety net: if sources are enabled, never return a sources list without citations.
+    # (Even when `MOLSYS_AI_CHAT_ENFORCE_CITATIONS=0`, we still inject a minimal marker like
+    # "[1]" so the sources list is not orphaned.)
+    if show_sources and sources and not _has_bracket_citations(answer):
+        answer = _inject_citations(answer, sources)
+
     return ChatResponse(answer=answer, sources=sources if show_sources else [])
 
 
 @app.on_event("startup")
 async def _load_or_build_docs_index_on_startup() -> None:
-    global _DOCS_INDEX
+    global _DOCS_INDEX, _PROJECT_INDICES
     force_rebuild = _env_bool("MOLSYS_AI_DOCS_INDEX_REBUILD", False)
     if DOCS_INDEX_PATH.exists() and not force_rebuild:
         print(f"Loading existing index from {DOCS_INDEX_PATH}")
@@ -515,3 +1019,15 @@ async def _load_or_build_docs_index_on_startup() -> None:
         build_index(DOCS_SOURCE_DIR, DOCS_INDEX_PATH)
         _DOCS_INDEX = load_index(DOCS_INDEX_PATH)
     print(f"Index loaded with {_DOCS_INDEX.__len__()} documents.")
+
+    # Optional segmented indices (one per project).
+    _PROJECT_INDICES = {}
+    if PROJECT_INDEX_DIR.exists():
+        for name in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
+            p = PROJECT_INDEX_DIR / f"{name}.pkl"
+            if p.exists():
+                try:
+                    _PROJECT_INDICES[name] = load_index(p)
+                    print(f"Loaded project index {name}: {len(_PROJECT_INDICES[name])} documents from {p}")
+                except Exception:
+                    continue

@@ -235,18 +235,26 @@ curl -i -sS -X OPTIONS "http://${HOST}:${CHAT_API_PORT}/v1/chat" \
   | grep -i '^access-control-allow-origin:' | head -n 1
 
 echo "[widget] cross-origin POST:"
-ans="$(curl -sS -X POST "http://${HOST}:${CHAT_API_PORT}/v1/chat" \
+resp="$(curl -sS -X POST "http://${HOST}:${CHAT_API_PORT}/v1/chat" \
   -H "Origin: http://${HOST}:${DOCS_HTTP_PORT}" \
   -H 'Content-Type: application/json' \
   "${CHAT_AUTH_HEADER[@]}" \
-  -d '{"query":"What is the example PDB id? Reply with just the id.","k":2}' \
-  | python -c 'import json,sys; print(json.load(sys.stdin).get("answer",""))')"
+  -d '{"query":"What is the example PDB id? Reply with just the id and cite the source like [1].","k":2}')"
+ans="$(python -c 'import json,sys; print(json.load(sys.stdin).get("answer",""))' <<<"${resp}")"
 echo "[widget] answer: ${ans}"
 
-python - <<PY
-ans = """${ans}""".strip().lower()
-assert "1vii" in ans
-print("[widget] OK")
+RESP="${resp}" python - <<'PY'
+import json
+import os
+
+obj = json.loads(os.environ["RESP"])
+ans = (obj.get("answer") or "").strip()
+ans_lower = ans.lower()
+assert "1vii" in ans_lower, ans
+assert "[1]" in ans, ans
+sources = obj.get("sources")
+assert isinstance(sources, list) and len(sources) >= 1, sources
+print("[widget] OK (answer contains citations and sources list is non-empty)")
 PY
 
 echo "[widget] Open in a browser:"

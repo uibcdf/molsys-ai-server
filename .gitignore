@@ -75,6 +75,7 @@ server/model_server/config.yaml
 server/chat_api/data/docs/
 server/chat_api/data/rag_index.pkl
 server/chat_api/data/anchors.json
+server/chat_api/data/indexes/
 
 # Temporary build script
 _build_index_script.py
@@ -85,3 +86,6 @@ _build_index_script.py
 
 # Codex CLI session artifacts
 codex_session.sh
+
+# Benchmark runs (generated)
+dev/benchmarks/runs/

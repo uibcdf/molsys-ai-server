@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "molsys-ai"
 version = "0.1.0"
-description = "MolSys-AI: an AI assistant for the UIBCDF MolSys* ecosystem."
+description = "MolSys-AI: an AI assistant for the UIBCDF MolSysSuite tools."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

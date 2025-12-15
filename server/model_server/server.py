@@ -189,6 +189,7 @@ class VLLMBackend(ModelBackend):
             )
 
         tensor_parallel_size = model_cfg.get("tensor_parallel_size", 1)
+        seed = model_cfg.get("seed", 0)
         quantization = model_cfg.get(
             "quantization", None
         )  # Default to None to use full precision or model's default
@@ -217,6 +218,12 @@ class VLLMBackend(ModelBackend):
             "quantization": quantization,
             "trust_remote_code": True,  # Required for some models, e.g., Qwen
         }
+        # vLLM 0.12 treats `seed=None` as `seed=0`, but v0.13 will reject `None`.
+        # Keep an explicit integer default for forward compatibility and reproducibility.
+        try:
+            llm_kwargs["seed"] = int(0 if seed is None else seed)
+        except Exception:
+            llm_kwargs["seed"] = 0
         if max_model_len is not None:
             llm_kwargs["max_model_len"] = int(max_model_len)
         if gpu_memory_utilization is not None:

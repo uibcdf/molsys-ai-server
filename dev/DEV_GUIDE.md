@@ -98,7 +98,7 @@ This installs:
 - ruff
 - mypy (optional type checking)
 
-## 4. (Optional) Install MolSys* ecosystem tools (recommended: separate agent environment)
+## 4. (Optional) Install MolSysSuite tools (recommended: separate agent environment)
 
 If you plan to develop or test tool execution with MolSysSuite, it is recommended to use a dedicated environment for the local agent
 so you do not contaminate the server/vLLM environment.
@@ -127,6 +127,28 @@ To verify that the basic skeleton imports correctly:
 
 ```bash
 pytest
+```
+
+## 6. Run the local servers (manual)
+
+For interactive local work (e.g. running the Sphinx widget against a live backend),
+use the helper scripts:
+
+- Engine server (vLLM): `./dev/run_model_server.sh`
+- Chat API (RAG): `./dev/run_chat_api.sh`
+
+See `dev/RUNBOOK_VLLM.md` for the validated vLLM environment and a sample model YAML.
+
+Example (two terminals):
+
+```bash
+# Terminal 1
+./dev/run_model_server.sh --config /tmp/molsys_ai_vllm.yaml --cuda-devices 0 --warmup
+```
+
+```bash
+# Terminal 2 (if serving docs on 8080)
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001 --cors http://127.0.0.1:8080,http://localhost:8080
 ```
 
 You should see all tests passing.

@@ -170,7 +170,7 @@
     const conversation = [];
     const greeting =
       mode === "backend"
-        ? "Hi! Ask me about the MolSys* documentation."
+        ? "Hi! Ask me about the MolSysSuite documentation."
         : "Hi! This MolSys-AI docs bot is not ready yet. Stay tuned for more features soon...";
     appendMessage(greeting, "assistant");
     conversation.push({ role: "assistant", content: greeting });
@@ -231,7 +231,7 @@
         // Placeholder mode: always respond with the same friendly message.
         var placeholder =
           "This bot is still under development. "
-            + "In future versions it will answer questions about the MolSys* documentation.";
+            + "In future versions it will answer questions about the MolSysSuite documentation.";
         appendMessage(placeholder, "assistant");
         conversation.push({ role: "assistant", content: placeholder });
       }

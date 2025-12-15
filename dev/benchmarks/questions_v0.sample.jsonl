@@ -1,0 +1,5 @@
+{"id":"q1","query":"How do I install MolSysSuite tools? Give a short answer and include links.","want_sources":true}
+{"id":"q2","query":"What is the purpose of MolSysMT? Reply in 2-3 sentences and cite sources.","want_sources":true,"contains":["molsysmt"]}
+{"id":"q3","query":"How can I load a PDB by id (example: 1VII) and then print basic system info? Provide a short Python snippet and cite sources.","want_sources":true,"contains":["1vii"]}
+{"id":"q4","query":"Where is the documentation for MolSysViewer published? Reply with the URL and cite it.","want_sources":true,"contains":["uibcdf.org/molsysviewer"]}
+{"id":"q5","query":"Explain how to compute contacts between CA atoms within 10 angstroms for PDB 1VII. Provide a script snippet. Cite sources.","want_sources":true,"contains":["10"],"not_contains":["I executed","I ran"]}

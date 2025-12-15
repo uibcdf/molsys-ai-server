@@ -79,6 +79,9 @@ Hugging Face SSH + `git-lfs`, and a stable configuration for 11 GB GPUs), see:
   - Context window limit (tokens). Must be set explicitly on 11 GB GPUs.
 - `model.gpu_memory_utilization`
   - Fraction of GPU memory vLLM is allowed to use.
+- `model.seed`
+  - Random seed used by the engine for sampling. Keep as an explicit integer (e.g. `0`)
+    for reproducibility and forward-compatibility with vLLM v0.13.
 - `model.enforce_eager`
   - Stability-first toggle. When `true`, vLLM disables `torch.compile` and CUDA
     graphs, reducing OOM risk during warmup on 11 GB GPUs.

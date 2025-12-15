@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.12
   - pip
-  # MolSys* ecosystem tools (from the laboratory channel)
+  # MolSysSuite tools (from the laboratory channel)
   # - molsysmt
   # - molsysviewer
   # - topomt

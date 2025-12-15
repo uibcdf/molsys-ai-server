@@ -128,6 +128,6 @@ Future work around notebook integration may include:
   planner/executor can emit and that can be converted to notebook cells.
 - Creating example notebooks under `train/notebooks/` or `dev/` that showcase:
   - interactive chat,
-  - automatic workflow notebook generation for real MolSys* tasks.
+  - automatic workflow notebook generation for real MolSysSuite tasks.
 - Experimenting with JupyterLab/VS Code APIs to implement a safe and
   auditable `inject_workflow_into_current_notebook` for advanced users.

@@ -67,6 +67,7 @@ Significant progress has been made in establishing the inference stack with GPU 
 - **API naming cleanup:** public endpoint is `POST /v1/chat`; internal engine endpoint is `POST /v1/engine/chat` (no legacy `/v1/docs-chat` naming).
 - **RAG embeddings validation:** `chat_api` was also validated with `sentence-transformers` installed (v5.2.0), building a
   small Markdown index and answering a retrieval-backed question correctly (example: returns `1VII` for a synthetic doc).
+  - Index builds can be parallelized across multiple GPUs using `dev/sync_rag_corpus.py --build-index-parallel --index-devices 0,1,2`.
 - **API authentication policy (production-ready):**
   - `POST /v1/engine/chat` (internal model backend) can be protected with `MOLSYS_AI_ENGINE_API_KEYS` (API key allowlist).
   - `chat_api` can authenticate to the model server via `MOLSYS_AI_ENGINE_API_KEY`.
@@ -89,6 +90,7 @@ chat formatting.
 Repository documentation has been consolidated around:
 
 - `AGENTS.md` as the single “how to work here” entry point,
+- `dev/BENCHMARKING.md` as the benchmarking/characterization guide,
 - `dev/RUNBOOK_VLLM.md` as the inference runbook,
 - a minimal `environment.yml` for general development (install Python deps via `pip install -e ".[dev]"`).
 - the stable API contract for external clients: `dev/API_CONTRACT_V1.md`.
@@ -130,10 +132,23 @@ RAG corpus automation (live docs repos):
 
 - A reproducible corpus snapshot + index build is available via `dev/sync_rag_corpus.py` (targets sibling repos:
   `../molsysmt`, `../molsysviewer`, `../pyunitwizard`, `../topomt`).
+- Optional derived corpus layers (quality work, see `dev/decisions/ADR-021.md`):
+  - `--build-symbol-cards` (per-symbol cards),
+  - `--build-recipes` (notebook + tests recipes),
+  - optional offline digestion into `recipe_cards/` via `dev/digest_recipes_llm.py`.
+- Large documentation pages and notebooks are included by default:
+  - text files larger than `--max-bytes` are truncated in the snapshot (instead of skipped),
+  - notebooks are compacted (outputs stripped) and bounded by `--max-bytes-ipynb`.
 - The same script can generate an anchors map (`server/chat_api/data/anchors.json`) by extracting explicit MyST labels
   `(Label)=` from `docs/` sources, without running Sphinx or importing upstream packages.
 - The generated corpus and index live under `server/chat_api/data/` by default and are intentionally ignored by git.
 - An in-process end-to-end smoke (retrieve → prompt → vLLM backend) is available via `dev/smoke_chat_inprocess.py`.
+- A quantitative coverage audit is available via `dev/audit_rag_corpus.py` (recommended after each corpus refresh).
+- Each corpus refresh also writes an always-on coverage summary to `server/chat_api/data/docs/_coverage.json`.
+- Design record: `dev/decisions/ADR-019.md`.
+- Implemented guardrails: API symbol verification + symbol re-read + semantic benchmark checks (`dev/decisions/ADR-020.md`).
+- Implemented next quality step: code-aware derived corpus (“symbol cards”) + recipe indexing + symbol-aware retrieval
+  prioritization for API-heavy questions (`dev/decisions/ADR-021.md`).
 
 ## 4. Next Steps
 
@@ -153,6 +168,33 @@ The immediate next steps focus on validating the docs chatbot and then iterating
 3.  **Improve RAG quality:**
     - **Prompt Engineering:** Refine the prompt sent to the LLM to make more effective use of the documentation context.
     - **Chunking:** Evaluate and improve the document splitting strategy (`chunking`) in `server/rag/build_index.py`.
+    - **Benchmarks (baseline first):** Create a small, stable question set and track quality over time:
+      - docs: `dev/benchmarks/README.md`
+      - runner: `dev/benchmarks/run_chat_bench.py`
+      - start with `dev/benchmarks/questions_v0.sample.jsonl`
+    - **API surface + segmented indices (recommended):**
+      - Build a docstring/signature snapshot with `dev/sync_rag_corpus.py --build-api-surface` (no imports).
+      - Build per-project indices with `dev/sync_rag_corpus.py --build-project-indices`.
+      - Configure `MOLSYS_AI_PROJECT_INDEX_DIR` for `chat_api` to reduce cross-project API hallucinations.
+    - **Hybrid retrieval:** enable lexical rerank (env `MOLSYS_AI_RAG_HYBRID_WEIGHT`) to improve exact API name matching.
+    - **Serious baseline (implemented):** the current minimal “serious” stack is:
+      - RAG (segmented indices + hybrid rerank),
+      - symbol verification (`MOLSYS_AI_CHAT_VERIFY_SYMBOLS`),
+      - symbol re-read (`MOLSYS_AI_CHAT_REREAD_SYMBOLS`),
+      - semantic benchmark checks (`dev/benchmarks/run_chat_bench.py --check-symbols`).
+    - **Next quality target:** evolve toward:
+      - RAG + verification + derived corpus + stronger reranking,
+      - then fine-tuning (LoRA/QLoRA) with a curated dataset.
+    - **Quality target (informal):** aim for ~8.5/10 once the first fine-tuned model + stronger reranking are in place.
+    - **Derived corpus (implemented):** symbol-first “symbol cards” + extracted notebook/test recipes
+      (ADR: `dev/decisions/ADR-021.md`).
+    - **Next derived-corpus step:** optionally generate LLM-digested `recipe_cards/` offline and, once validated, index and
+      prioritize them in retrieval (ADR: `dev/decisions/ADR-021.md`).
+    - **Next code-aware improvement:** extract docstring examples into `recipes/docstrings/` (doctests / `Examples:` blocks /
+      fenced code) so they become retrievable snippets tied to symbols (ADR: `dev/decisions/ADR-021.md`).
+    - **Coverage audit:** after each corpus refresh, run `python dev/audit_rag_corpus.py --rescan-sources` and tune:
+      - `--max-bytes`, `--max-bytes-ipynb`, and `--include-large-text`,
+      - `--api-surface-max-modules` / `--api-surface-max-symbols` (use `0` for no limit when doing a full coverage pass).
 4.  **Benchmarking suite:** Implement benchmark tasks (ADR-011/017) to evaluate changes in retrieval/prompting/models.
 5.  **Expand local agent tools (client-side):**
     - Keep tool execution local-only (`molsys-ai agent`), and avoid server environments importing MolSysSuite toolchains.

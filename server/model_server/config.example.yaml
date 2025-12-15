@@ -15,6 +15,9 @@ model:
   tensor_parallel_size: 1
   # Specify the quantization method.
   quantization: "awq"
+  # Random seed for generation. Keep as an explicit integer (`0` is a good default).
+  # Note: vLLM v0.13 will no longer accept `null`/`None` here.
+  seed: 0
   # Set a max model length (tokens). 8192 is a reasonable baseline on 11 GB GPUs.
   max_model_len: 8192
   # Conservative memory utilization for stability.

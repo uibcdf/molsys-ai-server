@@ -65,6 +65,9 @@ but it must never replace the literal snapshot; it is an additive layer.
 
 - `build_index.build_index(source_dir, index_path)` (MVP implementation):
   - Reads `*.md`, `*.rst`, and `*.txt` files under `source_dir`.
+  - For notebooks (`*.ipynb`), it indexes markdown and (by default) code cell sources
+    to capture executable API examples. You can disable code cells with:
+    - `MOLSYS_AI_RAG_IPYNB_INCLUDE_CODE=0`
   - Splits content into small chunks with a simple Markdown-aware heuristic:
     - tracks headings as section context,
     - merges paragraphs into chunks by character size.
@@ -82,6 +85,9 @@ but it must never replace the literal snapshot; it is an additive layer.
 - `retriever.retrieve(query, k=5)`:
   - Embeds the query using the same embedding model.
   - Scores documents by cosine similarity against stored embeddings.
+  - Optional hybrid rerank:
+    - `MOLSYS_AI_RAG_HYBRID_WEIGHT` (default: 0.15) mixes in a lightweight lexical score
+      to boost exact identifier matches (e.g. function names like `molsysmt.structure.get_rmsd`).
   - To reduce repetition, retrieval limits how many chunks can be returned from a single
     source file (default: 3). Tune with `MOLSYS_AI_RAG_MAX_CHUNKS_PER_SOURCE`.
   - Returns up to `k` documents ordered by similarity.

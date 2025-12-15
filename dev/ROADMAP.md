@@ -34,6 +34,7 @@ This roadmap focuses on getting a **usable MVP** while keeping the architecture 
 - Establish the RAG corpus update workflow:
   - sync a **literal snapshot** of documentation files from the live repos,
   - rebuild the embedding index regularly (e.g. weekly).
+  - audit coverage (large docs/notebooks + API surface limits) after each refresh.
   - See `dev/sync_rag_corpus.py`.
 
 ## v0.4 – Documentation chatbot backend + widget
@@ -44,6 +45,10 @@ This roadmap focuses on getting a **usable MVP** while keeping the architecture 
   - Add an LLM router path so the CLI can use the same endpoint with:
     - RAG always available (specialist answers),
     - sources/citations shown only when requested or inferred.
+  - Add the “serious” correctness stack:
+    - API symbol verification,
+    - API symbol re-read (retrieve `api_surface/` for used symbols + rewrite),
+    - semantic benchmark checks (unknown symbols fail).
 - Add deep-linkable sources:
   - extract explicit MyST labels `(Label)=` from upstream docs snapshots,
   - return a `sources` list aligned with citations `[1]`, `[2]`, ...,
@@ -69,3 +74,11 @@ This roadmap focuses on getting a **usable MVP** while keeping the architecture 
 - Update the model server to use this specialized model (vLLM + AWQ baseline).
 
 Further versions will refine the agent autonomy, add more tools and improve robustness.
+
+## Near-term quality work (pre-fine-tuning)
+
+- Add a code-aware derived corpus layer (“symbol cards”) and treat tests/examples as “recipes”.
+- Move retrieval toward symbol-aware hybrid search + stronger reranking.
+- Keep the server inference environment decoupled from MolSysSuite imports; consider an optional
+  separate “inspector” service only if runtime introspection is needed.
+- Design record: `dev/decisions/ADR-021.md`.

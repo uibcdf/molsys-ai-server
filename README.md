@@ -10,7 +10,7 @@ This repository hosts the **server-side** components of the MolSys-AI project fo
 
 MolSys-AI aims to provide:
 
-- An **autonomous agent** that can design and execute workflows using the MolSys* tools.
+- An **autonomous agent** that can design and execute workflows using MolSysSuite tools.
 - A **CLI interface** to interact with the agent from the terminal.
 - A **documentation chatbot** embedded in Sphinx/GitHub Pages.
 - A flexible **model serving** layer for self-hosted LLMs.
