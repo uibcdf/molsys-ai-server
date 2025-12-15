@@ -270,10 +270,19 @@ def _is_symbol_card_doc(doc: Document) -> bool:
 def _is_recipe_doc(doc: Document) -> bool:
     kind = str(doc.metadata.get("kind") or "").strip().lower()
     if kind:
-        return kind == "recipe"
+        return kind in {"recipe", "recipe_card"}
     raw = str(doc.metadata.get("path") or "")
     p = raw.replace("\\", "/")
     return "/recipes/" in p
+
+
+def _is_recipe_card_doc(doc: Document) -> bool:
+    kind = str(doc.metadata.get("kind") or "").strip().lower()
+    if kind:
+        return kind == "recipe_card"
+    raw = str(doc.metadata.get("path") or "")
+    p = raw.replace("\\", "/")
+    return "/recipe_cards/" in p
 
 
 def _looks_like_api_question(query: str) -> bool:
@@ -321,17 +330,20 @@ def _select_docs_for_api_question(candidates: list[Document], *, k: int) -> list
         return []
 
     symbol_cards = [d for d in candidates if _is_symbol_card_doc(d)]
-    recipes = [d for d in candidates if _is_recipe_doc(d)]
+    recipe_cards = [d for d in candidates if _is_recipe_card_doc(d)]
+    recipes = [d for d in candidates if _is_recipe_doc(d) and d not in recipe_cards]
     api_surface = [d for d in candidates if _is_api_surface_doc(d)]
-    rest = [d for d in candidates if d not in symbol_cards and d not in recipes and d not in api_surface]
+    rest = [d for d in candidates if d not in symbol_cards and d not in recipe_cards and d not in recipes and d not in api_surface]
 
     # Quotas tuned for small k (default k=5).
     n_symbol = min(2, k)
-    n_recipe = min(2, max(k - n_symbol, 0))
-    n_api = min(1, max(k - n_symbol - n_recipe, 0))
+    n_recipe_card = min(1, max(k - n_symbol, 0))
+    n_recipe = min(1, max(k - n_symbol - n_recipe_card, 0))
+    n_api = min(1, max(k - n_symbol - n_recipe_card - n_recipe, 0))
 
     picked: list[Document] = []
     picked.extend(symbol_cards[:n_symbol])
+    picked.extend(recipe_cards[:n_recipe_card])
     picked.extend(recipes[:n_recipe])
     picked.extend(api_surface[:n_api])
     picked.extend(rest)

@@ -223,6 +223,8 @@ def _classify_doc(rel_posix: str) -> str:
         return "api_surface"
     if "/recipes/" in p:
         return "recipe"
+    if "/recipe_cards/" in p:
+        return "recipe_card"
     return "docs"
 
 

@@ -82,6 +82,17 @@ Design decision record:
 
 - `dev/decisions/ADR-019.md`
 - `dev/decisions/ADR-020.md`
+- `dev/decisions/ADR-021.md`
+
+## Indexing derived layers
+
+If you run `dev/digest_recipes_llm.py` to generate `recipe_cards/`, rebuild the indices so the new
+documents are embedded and retrievable:
+
+```bash
+MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+python dev/sync_rag_corpus.py --build-index --build-project-indices --build-index-parallel --index-devices 0,1
+```
 
 For production deployments, you may prefer storing these artifacts under a system
 directory (e.g. `/var/lib/molsys-ai/...`) and set:
