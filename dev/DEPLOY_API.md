@@ -77,6 +77,16 @@ export MOLSYS_AI_CORS_ORIGINS=https://uibcdf.org,https://www.uibcdf.org
 export MOLSYS_AI_EMBEDDINGS=sentence-transformers
 ```
 
+Recommended for production quality:
+
+- Build a BM25 sidecar index and enable BM25 mixing in `chat_api`:
+  - build: `python dev/sync_rag_corpus.py --clean --build-index --build-bm25 --build-project-indices`
+  - runtime: set `MOLSYS_AI_RAG_BM25_WEIGHT=0.25` (tune as needed)
+
+Optional debugging (temporary):
+
+- `MOLSYS_AI_RAG_LOG_SCORES=1` (logs retrieval score breakdown in `chat_api`)
+
 For a systemd-based deployment, see the example unit files:
 
 - `dev/systemd/molsys-ai-model.service.example`
@@ -173,7 +183,7 @@ Practical approach:
 MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
 MOLSYS_AI_CORS_ORIGINS=https://uibcdf.org,https://www.uibcdf.org \
 MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-uvicorn chat_api.backend:app --host 0.0.0.0 --port <PORT> \
+PYTHONPATH=server:client python -m uvicorn chat_api.backend:app --host 0.0.0.0 --port <PORT> \
   --ssl-keyfile /path/to/privkey.pem \
   --ssl-certfile /path/to/fullchain.pem
 ```

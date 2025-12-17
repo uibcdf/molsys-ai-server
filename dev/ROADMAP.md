@@ -78,7 +78,24 @@ Further versions will refine the agent autonomy, add more tools and improve robu
 ## Near-term quality work (pre-fine-tuning)
 
 - Add a code-aware derived corpus layer (“symbol cards”) and treat tests/examples as “recipes”.
+- For notebook-based documentation, keep a clear retrieval hierarchy:
+  - tutorial → section → cell (with stitched preambles for section blocks).
+- Strengthen lexical retrieval:
+  - BM25 sidecar + mixing (`MOLSYS_AI_RAG_BM25_WEIGHT`) and track impact in benchmarks.
 - Move retrieval toward symbol-aware hybrid search + stronger reranking.
 - Keep the server inference environment decoupled from MolSysSuite imports; consider an optional
   separate “inspector” service only if runtime introspection is needed.
 - Design record: `dev/decisions/ADR-021.md`.
+
+## Agent-mode requirement (do not forget)
+
+When `molsys-ai` evolves from “CLI chat” to an autonomous local agent, it must be able to validate
+its planned actions against the real installed toolchain before executing them:
+
+- confirm symbol existence,
+- confirm signature/kwargs (`inspect.signature`),
+- read full docstrings (`help()`), and optionally source (`inspect.getsource`) for ambiguous behavior,
+- run minimal “micro-tests” (sandboxed) to validate expected input/output types.
+
+This runtime introspection must live in the **local agent environment** (or an optional isolated
+inspector service), not in the vLLM serving stack.

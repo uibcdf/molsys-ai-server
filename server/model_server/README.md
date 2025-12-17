@@ -42,7 +42,7 @@ model:
 the server uses the echo stub and does not load any model:
 
 ```bash
-uvicorn model_server.server:app --reload
+PYTHONPATH=server:client python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 The endpoint will respond with:

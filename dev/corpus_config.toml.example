@@ -1,0 +1,72 @@
+# MolSys-AI corpus selection config (example)
+#
+# Use with:
+#   python dev/sync_rag_corpus.py --corpus-config dev/corpus_config.toml --clean ...
+#
+# Notes:
+# - This file controls which upstream directories/files are snapshotted into `server/chat_api/data/docs/`.
+# - By default, upstream `examples/` directories are excluded because they can be stale and may reinforce
+#   legacy APIs/aliases. Opt-in per project with `include_examples=true` or by adding "examples" to
+#   `include_dirs`.
+#
+# Format: TOML (Python 3.11+ via `tomllib`). JSON is also supported.
+
+version = 1
+
+[defaults]
+# Directories (relative to each upstream repo root) to scan for text sources.
+include_dirs = ["docs", "doc", "devguide"]
+
+# Root-level files (globs, relative to repo root) to include even if they are not under `include_dirs`.
+include_root_globs = [
+  "README*.md",
+  "README*.rst",
+  "dev_guide.md",
+  "README_DEVELOPERS*.md",
+  "notes*.md",
+  "ideas*.md",
+  "CHANGELOG*.md",
+]
+
+# Text extensions considered for snapshotting.
+text_exts = [".md", ".rst", ".txt", ".ipynb"]
+
+# Directory names to skip anywhere in the tree.
+exclude_dir_names = [
+  ".git",
+  ".github",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".ipynb_checkpoints",
+  ".venv",
+  "venv",
+  "env",
+  "_build",
+  "build",
+  "dist",
+  "node_modules",
+  "attic",
+  "logos",
+  "paper",
+]
+
+[sources.molsysmt]
+path = "../molsysmt"
+docs_base_url = "https://www.uibcdf.org/molsysmt"
+# include_examples = true
+# include_dirs = ["docs"]  # override defaults for this project only
+
+[sources.molsysviewer]
+path = "../molsysviewer"
+docs_base_url = "https://www.uibcdf.org/molsysviewer"
+
+[sources.pyunitwizard]
+path = "../pyunitwizard"
+docs_base_url = "https://www.uibcdf.org/pyunitwizard"
+
+[sources.topomt]
+path = "../topomt"
+docs_base_url = "https://www.uibcdf.org/topomt"
+

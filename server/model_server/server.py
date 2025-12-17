@@ -15,6 +15,7 @@ server falls back to the stub backend.
 from __future__ import annotations
 
 import os
+import traceback
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -335,15 +336,28 @@ class VLLMBackend(ModelBackend):
 
         sampling = self._sampling_for(generation)
         try:
-            outputs = self._llm.generate(
-                [prompt],
-                sampling,
-                # For chat models, it's better to use `apply_chat_template`
-                # if the model supports it, but for a general `ModelBackend`
-                # this is simpler.
-            )
+            outputs = self._llm.generate([prompt], sampling)
+            if not outputs or not getattr(outputs[0], "outputs", None):
+                raise RuntimeError("Empty generation output from vLLM.")
             text = outputs[0].outputs[0].text
-        except Exception as exc: # pragma: no cover - backend-specific
+        except Exception as exc:  # pragma: no cover - backend-specific
+            # vLLM failures often contain crucial context only in the traceback. Print it
+            # so dev scripts (warmup) can show meaningful diagnostics.
+            print("[model_server] vLLM generate() failed:", repr(exc))
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
+
+            debug = (os.environ.get("MOLSYS_AI_ENGINE_DEBUG_ERRORS") or "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            }
+            if debug:
+                raise RuntimeError(f"Model backend failed to generate a reply: {type(exc).__name__}: {exc}") from exc
             raise RuntimeError("Model backend failed to generate a reply.") from exc
 
         return text.strip()
@@ -354,11 +368,21 @@ def load_config() -> Dict[str, Any]:
 
     If no config file exists, a default stub configuration is returned.
     """
-    path_str = os.environ.get(_CONFIG_ENV_VAR, str(_DEFAULT_CONFIG_PATH))
+    explicit = (os.environ.get(_CONFIG_ENV_VAR) or "").strip()
+    path_str = explicit or str(_DEFAULT_CONFIG_PATH)
     path = Path(path_str)
 
     if not path.exists():
-        # No config present: fall back to the stub backend.
+        # If the user explicitly asked for a config path, fail fast instead of
+        # silently falling back to the stub backend (common source of confusion
+        # when expecting GPU model loading).
+        if explicit:
+            raise RuntimeError(
+                f"Model server config not found: {path}. "
+                "Create the file (see server/model_server/config.example.yaml) "
+                "or unset MOLSYS_AI_MODEL_CONFIG to use the stub backend."
+            )
+        # No default config present: fall back to the stub backend.
         return {"model": {"backend": "stub"}}
 
     if yaml is None:
@@ -441,5 +465,16 @@ async def chat(req: ChatRequest) -> ChatResponse:
         content = backend.chat(req.messages, generation=req.generation)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        debug = (os.environ.get("MOLSYS_AI_ENGINE_DEBUG_ERRORS") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+        if debug:
+            raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Internal error.")
 
     return ChatResponse(content=content)

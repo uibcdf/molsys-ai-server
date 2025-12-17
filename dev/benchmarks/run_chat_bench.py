@@ -164,6 +164,7 @@ class Checks:
     contains_any: list[str] = None  # type: ignore[assignment]
     not_contains: list[str] = None  # type: ignore[assignment]
     symbols_must_exist: bool | None = None
+    symbols_strict: bool | None = None
 
 
 def _evaluate(
@@ -236,7 +237,8 @@ def _evaluate(
             reg_syms, reg_prefixes = symbols.get(project) or (set(), set())
             if (reg_syms or reg_prefixes) and (resolved not in reg_syms and resolved not in reg_prefixes):
                 bad.append(resolved)
-        if bad and "NOT_DOCUMENTED" not in ans:
+        strict = (checks.symbols_strict is True)
+        if bad and (strict or "NOT_DOCUMENTED" not in ans):
             fail("symbols", f"Unknown tool symbols: {bad[:10]!r}" + (" (truncated)" if len(bad) > 10 else ""))
         else:
             ok("symbols")
@@ -271,6 +273,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Enable semantic check: fail when answers mention unknown MolSysSuite API symbols (best-effort).",
     )
+    p.add_argument(
+        "--strict-symbols",
+        action="store_true",
+        help="When used with --check-symbols, also fail if the answer contains `NOT_DOCUMENTED` but still mentions unknown symbols.",
+    )
     args = p.parse_args(argv)
 
     base_url = args.base_url.rstrip("/")
@@ -299,6 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "input": str(in_path),
         "symbols_check_enabled": bool(args.check_symbols),
+        "symbols_strict": bool(args.strict_symbols),
         "symbols_path": str(args.symbols),
     }
 
@@ -328,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
 
         want_sources = item.get("want_sources")
         symbols_must_exist = item.get("symbols_must_exist")
+        symbols_strict = item.get("symbols_strict")
         checks = Checks(
             want_sources=want_sources if isinstance(want_sources, bool) else None,
             contains=_coerce_list_of_str(item.get("contains")),
@@ -337,6 +346,11 @@ def main(argv: list[str] | None = None) -> int:
                 bool(symbols_must_exist)
                 if isinstance(symbols_must_exist, bool)
                 else (True if args.check_symbols else None)
+            ),
+            symbols_strict=(
+                bool(symbols_strict)
+                if isinstance(symbols_strict, bool)
+                else (True if args.strict_symbols else None)
             ),
         )
 

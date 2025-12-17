@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -116,6 +117,7 @@ def _build_prompt(*, raw_recipe: str, project: str, want_sources: bool) -> list[
         "- Do NOT invent API names.\n"
         "- Prefer short, runnable snippets.\n"
         "- Keep it concise.\n"
+        "- When writing MolSysMT Python snippets, use: `import molsysmt as msm`.\n"
         "Return ONLY Markdown.\n"
     )
     if want_sources:
@@ -141,16 +143,50 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--engine-api-key", default="", help="Optional engine API key (Authorization: Bearer ...).")
     p.add_argument("--limit", type=int, default=0, help="Optional max number of recipes to digest.")
     p.add_argument(
+        "--include-cell-recipes",
+        action="store_true",
+        help="Also digest per-cell notebook recipes under recipes/notebooks/ (default: only notebooks_sections + tests).",
+    )
+    p.add_argument(
         "--progress-every",
         type=int,
         default=10,
         help="Print progress every N processed recipes (default: 10; set 0 to disable).",
     )
-    p.add_argument("--overwrite", action="store_true", help="Overwrite existing recipe_cards outputs.")
+    p.add_argument(
+        "--no-purge",
+        action="store_true",
+        help="Do not delete existing <project>/recipe_cards/ before generating new ones (default: purge).",
+    )
+    p.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing recipe_cards outputs (only relevant with --no-purge).",
+    )
     p.add_argument("--dry-run", action="store_true", help="Print what would be generated without writing.")
     args = p.parse_args(argv)
 
     docs_dir = Path(args.docs_dir).resolve()
+    if not docs_dir.exists():
+        raise SystemExit(f"Docs dir not found: {docs_dir}")
+
+    if not args.no_purge:
+        # Purge by default to avoid stale recipe cards lingering after upstream docs/recipes move or disappear.
+        for project in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
+            out_root = (docs_dir / project / "recipe_cards").resolve()
+            try:
+                out_root.relative_to(docs_dir)
+            except Exception:
+                continue
+            if out_root.name != "recipe_cards":
+                continue
+            if out_root.exists():
+                if args.dry_run:
+                    print(f"[dry-run] purge: {out_root}")
+                else:
+                    shutil.rmtree(out_root)
+        if not args.dry_run:
+            print("Purged existing recipe_cards/ (default behavior).")
     symbols_path = Path(args.symbols).resolve() if (args.symbols or "").strip() else (docs_dir / "_symbols.json")
     registry = _load_symbol_registry(symbols_path)
 
@@ -160,7 +196,11 @@ def main(argv: list[str] | None = None) -> int:
 
     recipe_paths: list[Path] = []
     for project in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
-        recipe_paths.extend(sorted((docs_dir / project / "recipes").rglob("*.md")))
+        recipe_paths.extend(sorted((docs_dir / project / "recipes" / "notebooks_tutorials").rglob("*.md")))
+        recipe_paths.extend(sorted((docs_dir / project / "recipes" / "notebooks_sections").rglob("*.md")))
+        recipe_paths.extend(sorted((docs_dir / project / "recipes" / "tests").rglob("*.md")))
+        if args.include_cell_recipes:
+            recipe_paths.extend(sorted((docs_dir / project / "recipes" / "notebooks").rglob("*.md")))
 
     # Filter out already-generated outputs unless overwrite is requested.
     planned: list[tuple[Path, Path]] = []

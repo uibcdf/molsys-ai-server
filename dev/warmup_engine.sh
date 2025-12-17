@@ -74,10 +74,19 @@ if [[ -n "${MOLSYS_AI_ENGINE_API_KEY:-}" ]]; then
 fi
 
 echo "[warmup] sending warmup request..."
-curl -fsS -X POST "http://${HOST}:${PORT}/v1/engine/chat" \
-  -H 'Content-Type: application/json' \
-  "${AUTH_HEADER[@]}" \
-  -d '{"messages":[{"role":"user","content":"warmup: reply only OK"}]}' >/dev/null
+resp_file="$(mktemp -t molsys_ai_engine_warmup.XXXXXX.json)"
+http_code="$(
+  curl -sS -o "${resp_file}" -w '%{http_code}' -X POST "http://${HOST}:${PORT}/v1/engine/chat" \
+    -H 'Content-Type: application/json' \
+    "${AUTH_HEADER[@]}" \
+    -d '{"messages":[{"role":"user","content":"warmup: reply only OK"}]}'
+)"
+if [[ "${http_code}" != "200" ]]; then
+  echo "[warmup] failed (HTTP ${http_code}). Response body:" >&2
+  sed -n '1,200p' "${resp_file}" >&2 || true
+  rm -f "${resp_file}" || true
+  exit 1
+fi
+rm -f "${resp_file}" || true
 
 echo "[warmup] done"
-

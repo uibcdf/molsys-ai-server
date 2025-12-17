@@ -7,7 +7,7 @@ The system is composed of several logical components:
 
 - **client/agent/**: local agent loop, planning and tool execution (planned to split into its own repo).
 - **client/cli/**: command line interface used by end users (planned to split into its own repo).
-- **server/model_server/**: HTTP interface to the underlying language model (`/v1/chat`).
+- **server/model_server/**: HTTP interface to the underlying language model (`/v1/engine/chat`, private).
 - **server/chat_api/**: RAG-enabled chat API used by both the embedded widget and the CLI (`/v1/chat`).
 - **server/rag/**: retrieval-augmented generation layer used by server components.
 - **server/web_widget/**: small JS widget to embed the documentation chatbot.
@@ -43,6 +43,26 @@ RAG quality depends heavily on the document corpus. The long-term plan is to mai
   with explicit provenance.
 
 The derived corpus is additive and must never replace the literal snapshot.
+
+In practice, the “derived corpus” currently includes multiple code-aware layers (ADR-021):
+
+- **API surface** (`docs/<project>/api_surface/`): AST-derived signatures + docstring excerpts.
+- **Symbol cards** (`docs/<project>/symbol_cards/`): one document per symbol (function/class/method).
+- **Recipes** (`docs/<project>/recipes/`): extracted usage snippets, including:
+  - notebook tutorials (`recipes/notebooks_tutorials/`),
+  - notebook sections with stitched preambles (`recipes/notebooks_sections/`),
+  - per-cell notebook snippets (`recipes/notebooks/`),
+  - tests (`recipes/tests/`).
+- Additional recipe sources:
+  - docstring examples (`recipes/docstrings/`),
+  - Markdown fenced-code blocks (`recipes/markdown_snippets/`).
+- **Recipe cards** (`docs/<project>/recipe_cards/`): optional offline LLM-digested versions of recipes.
+
+Retrieval is hybrid:
+
+- embeddings (sentence-transformers),
+- lightweight lexical boost,
+- optional BM25 sidecar for stronger identifier matching.
 
 For the docs chatbot UX, the snapshot pipeline also extracts explicit MyST labels `(Label)=` from upstream docs and
 builds an `anchors.json` map. This allows `POST /v1/chat` to return deep-linkable sources that point to published

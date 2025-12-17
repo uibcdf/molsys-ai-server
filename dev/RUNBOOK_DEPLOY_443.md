@@ -104,6 +104,22 @@ python dev/sync_rag_corpus.py --clean --build-index --build-anchors
 For production, prefer storing generated artifacts under `/var/lib/molsys-ai` (outside the git checkout),
 and set `MOLSYS_AI_DOCS_DIR` / `MOLSYS_AI_DOCS_INDEX` in `/etc/molsys-ai/molsys-ai.env`.
 
+Recommended for production correctness/quality:
+
+- Build the code-aware layers (API surface + symbol cards + recipes):
+
+```bash
+python dev/sync_rag_corpus.py --clean --build-api-surface --build-symbol-cards --build-recipes --build-index --build-project-indices --build-anchors
+```
+
+- Build a BM25 sidecar for stronger identifier matching:
+
+```bash
+python dev/sync_rag_corpus.py --clean --build-index --build-bm25 --build-project-indices
+```
+
+Then set `MOLSYS_AI_RAG_BM25_WEIGHT` in the service env (try `0.25`).
+
 ## 3) Install and enable systemd services
 
 Copy the example units:

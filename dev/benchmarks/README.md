@@ -72,7 +72,7 @@ The JSONL output is designed to be greppable/diffable:
 For a human-friendly view, use the viewer:
 
 ```bash
-python dev/benchmarks/view_run.py dev/benchmarks/runs/<run>.jsonl --only-fail --full
+python dev/benchmarks/view_run.py dev/benchmarks/runs/<run>.jsonl --only-fail
 ```
 
 For deeper evaluation (semantic correctness), manual review is still required
@@ -80,3 +80,9 @@ at this stage; this harness is a baseline that we can later extend.
 
 Planned: semantic checks that fail when answers mention nonexistent API symbols
 (see `dev/decisions/ADR-020.md`).
+
+Tip: stricter symbol check:
+
+```bash
+python dev/benchmarks/run_chat_bench.py --in dev/benchmarks/questions_v0.jsonl --check-symbols --strict-symbols
+```

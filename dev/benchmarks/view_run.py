@@ -91,8 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("run", help="Path to a run JSONL under dev/benchmarks/runs/")
     p.add_argument("--only-fail", action="store_true", help="Show only failed questions.")
     p.add_argument("--ids", default="", help="Comma-separated list of question ids to show.")
-    p.add_argument("--full", action="store_true", help="Show full answers and source URLs.")
-    p.add_argument("--width", type=int, default=140, help="Line width for short mode.")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--short", action="store_true", help="Show a single-line answer preview and short source paths.")
+    mode.add_argument("--full", action="store_true", help="Show full answers and source URLs (default).")
+    p.add_argument("--width", type=int, default=140, help="Line width for --short mode.")
     args = p.parse_args(argv)
 
     run_path = Path(args.run)
@@ -112,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     for r in data:
-        _print_row(r, full=bool(args.full), width=int(args.width))
+        _print_row(r, full=(not bool(args.short)), width=int(args.width))
 
     return 0
 

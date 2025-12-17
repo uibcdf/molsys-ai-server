@@ -76,10 +76,14 @@ See `dev/RUNBOOK_VLLM.md` for the full procedure and smoke tests.
 
 ## Running servers (non-blocking)
 
+Prefer the helper scripts under `dev/` (they set `PYTHONPATH`, apply a few
+sanity checks, and keep the common flags consistent).
+
 To run servers without blocking your terminal, use `nohup`:
 
 ```bash
-nohup uvicorn model_server.server:app --reload > server.log 2>&1 &
+nohup ./dev/run_model_server.sh --config /path/to/model_server.yaml --cuda-devices 0 --warmup > model_server.log 2>&1 &
+nohup ./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001 > chat_api.log 2>&1 &
 ```
 
 For a reproducible, single-GPU vLLM smoke test (including a small multi-turn
@@ -99,7 +103,7 @@ Docs chatbot (backend) can be run separately (typically in the dev environment)
 and pointed at the model server:
 
 ```bash
-MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001
 ```
 
 ## Testing conventions
@@ -125,6 +129,8 @@ See `tests/test_smoke.py` for the reference pattern.
   `server/chat_api/data/docs/`. Large Markdown pages are truncated (instead of skipped)
   and notebooks are compacted (outputs stripped) to fit size limits.
 - The sync always writes a coverage summary to `server/chat_api/data/docs/_coverage.json`.
+- By default, upstream `examples/` directories are excluded because they can be stale and may reinforce legacy APIs/aliases.
+  Opt-in with `python dev/sync_rag_corpus.py --include-examples ...` when you explicitly want them in the corpus.
 - Offline fallback: if `sentence-transformers` is not installed, embeddings fall back
   to a deterministic hashing baseline. This keeps `chat_api` runnable for smoke tests,
   but retrieval quality will be much lower. You can force this mode with:
@@ -134,6 +140,9 @@ Coverage audit:
 
 - After syncing, run `python dev/audit_rag_corpus.py --rescan-sources` to quantify what
   was included/truncated and whether API-surface extraction hit limits.
+- If you need per-project control over which upstream directories are scanned, use
+  `python dev/sync_rag_corpus.py --corpus-config dev/corpus_config.toml ...` (example:
+  `dev/corpus_config.toml.example`).
 
 ## Documentation pointers
 

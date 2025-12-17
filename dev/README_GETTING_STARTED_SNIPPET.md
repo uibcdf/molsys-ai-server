@@ -21,15 +21,21 @@
    pytest
    ```
 
-4. **Start the model server (MVP stub)**:
+4. **Start the model server (engine; MVP stub)**:
 
    ```bash
-   uvicorn model_server.server:app --reload
+   PYTHONPATH=server:client python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --reload
    ```
 
-   Then open http://127.0.0.1:8000/docs to inspect the API.
+   Then open http://127.0.0.1:8001/docs to inspect the API.
 
-5. **Try the CLI**:
+5. **Start the chat API (optional, routes to the engine)**:
+
+   ```bash
+   ./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001
+   ```
+
+6. **Try the CLI**:
 
    ```bash
    python -m cli.main

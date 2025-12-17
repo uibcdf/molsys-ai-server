@@ -133,7 +133,13 @@ This produces `*.safetensors` shards in the cloned directory.
 
 ## 4) Configure the MolSys-AI model server (single GPU baseline)
 
-Create a YAML config file (example path: `/tmp/molsys_ai_vllm.yaml`):
+Create a YAML config file.
+
+Important note:
+- `/tmp` is often cleaned on HPC nodes. Prefer a stable path (e.g. `server/model_server/config.yaml`, which is git-ignored),
+  or a file under your home directory.
+
+Example config (path: `server/model_server/config.yaml`):
 
 ```yaml
 model:
@@ -141,6 +147,7 @@ model:
   local_path: "/ABS/PATH/TO/molsys-ai-server/models/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
   quantization: "awq"
   tensor_parallel_size: 1
+  seed: 0
 
   # Context/window limit (tokens). 8192 is a good initial baseline.
   max_model_len: 8192
@@ -152,7 +159,7 @@ model:
   enforce_eager: true
 ```
 
-## 5) Run the server (uvicorn)
+## 5) Run the engine server
 
 From the repository root, with the `vllm` env active:
 
@@ -160,14 +167,19 @@ From the repository root, with the `vllm` env active:
 export CUDA_HOME=/usr/local/cuda
 export PATH="$CUDA_HOME/bin:$PATH"
 
-CUDA_VISIBLE_DEVICES=0 \
-MOLSYS_AI_MODEL_CONFIG=/tmp/molsys_ai_vllm.yaml \
-uvicorn model_server.server:app --host 127.0.0.1 --port 8001
+./dev/run_model_server.sh --config server/model_server/config.yaml --cuda-devices 0
 ```
 
 OpenAPI:
 
 - http://127.0.0.1:8001/docs
+
+Sanity check (confirm backend is vLLM, not stub):
+
+```bash
+curl -s http://127.0.0.1:8001/healthz
+```
+Expect `"backend":"vllm"` when the model config is being loaded correctly.
 
 ## 6) Smoke tests
 
@@ -216,12 +228,11 @@ cat >/tmp/molsys_ai_docs_smoke/example.md <<'MD'
 The example PDB id is **1VII**.
 MD
 
-MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
-MOLSYS_AI_DOCS_DIR=/tmp/molsys_ai_docs_smoke \
-MOLSYS_AI_DOCS_INDEX=/tmp/molsys_ai_docs_smoke.pkl \
-MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-MOLSYS_AI_EMBEDDINGS_DEVICE=cpu \
-uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001 \
+  --docs-dir /tmp/molsys_ai_docs_smoke \
+  --docs-index /tmp/molsys_ai_docs_smoke.pkl \
+  --embeddings sentence-transformers \
+  --embeddings-device cpu
 ```
 
 3. Call it:

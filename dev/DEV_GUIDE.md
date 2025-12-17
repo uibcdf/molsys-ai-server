@@ -143,7 +143,10 @@ Example (two terminals):
 
 ```bash
 # Terminal 1
-./dev/run_model_server.sh --config /tmp/molsys_ai_vllm.yaml --cuda-devices 0 --warmup
+cp server/model_server/config.example.yaml dev/model_server.local.yaml
+# Edit dev/model_server.local.yaml and set:
+# - model.local_path: "<ABS PATH>/models/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
+./dev/run_model_server.sh --config dev/model_server.local.yaml --cuda-devices 0 --warmup
 ```
 
 ```bash
@@ -170,7 +173,7 @@ model weights will be loaded.
 Launch the FastAPI model server:
 
 ```bash
-uvicorn model_server.server:app --reload
+PYTHONPATH=server:client python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 Note: if you installed only `pip install -e .`, you must install server deps too:
@@ -179,13 +182,13 @@ Note: if you installed only `pip install -e .`, you must install server deps too
 pip install -e ".[server]"
 ```
 
-By default this will start on `http://127.0.0.1:8000`.
+By default this will start on `http://127.0.0.1:8001`.
 
 You can inspect the OpenAPI docs at:
 
-- http://127.0.0.1:8000/docs
+- http://127.0.0.1:8001/docs
 
-In this mode, the `/v1/chat` endpoint returns a stubbed reply.
+In this mode, the `/v1/engine/chat` endpoint returns a stubbed reply.
 
 ### 6.2 vLLM backend (current baseline)
 

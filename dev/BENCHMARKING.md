@@ -67,11 +67,21 @@ The canonical refresh workflow is `dev/sync_rag_corpus.py` (see ADR-019). It wri
 - `server/chat_api/data/anchors.json` (when `--build-anchors` is enabled)
 - `server/chat_api/data/docs/_symbol_cards.json` (when `--build-symbol-cards` is enabled)
 - `server/chat_api/data/docs/_recipes.json` (when `--build-recipes` is enabled)
+  - includes notebook-derived recipes at three granularities:
+    - `recipes/notebooks_tutorials/` (tutorial overview per notebook),
+    - `recipes/notebooks_sections/` (multi-cell section blocks; with stitched preambles),
+    - `recipes/notebooks/` (per-cell snippets).
 
 Measure wall time (example):
 
 ```bash
 /usr/bin/time -p python dev/sync_rag_corpus.py --clean --build-api-surface --build-index --build-project-indices --build-anchors
+```
+
+If you need per-project control over which upstream directories are scanned, pass a corpus config:
+
+```bash
+python dev/sync_rag_corpus.py --corpus-config dev/corpus_config.toml --clean --build-index
 ```
 
 Recommended “code-aware” refresh (adds symbol cards + recipes):
@@ -80,6 +90,32 @@ Recommended “code-aware” refresh (adds symbol cards + recipes):
 /usr/bin/time -p python dev/sync_rag_corpus.py --clean --build-api-surface --build-symbol-cards --build-recipes \
   --build-index --build-project-indices --build-anchors
 ```
+
+If you want stronger identifier matching, also build a BM25 sidecar during indexing:
+
+```bash
+python dev/sync_rag_corpus.py --clean --build-index --build-bm25
+```
+
+Then tune BM25 mixing at runtime by setting (in the `chat_api` environment):
+
+- `MOLSYS_AI_RAG_BM25_WEIGHT` (try `0.15`–`0.35`)
+- `MOLSYS_AI_RAG_HYBRID_WEIGHT` (light lexical boost; default `0.15`)
+
+If you also generate offline LLM-digested `recipe_cards/` (tutorial/section/test digests), rebuild indices after digestion:
+
+```bash
+python dev/digest_recipes_llm.py --docs-dir server/chat_api/data/docs
+python dev/sync_rag_corpus.py --build-index --build-project-indices --build-index-parallel --index-devices 0,1
+```
+
+Notes on recipes:
+
+- `--build-recipes` includes:
+  - notebook-derived recipes (tutorial/section/cell),
+  - test snippets (AST),
+  - docstring examples (doctest/fenced code; AST),
+  - fenced code blocks from Markdown pages.
 
 On multi-GPU hosts, shard the index build:
 
@@ -115,10 +151,7 @@ curl -fsS http://127.0.0.1:8001/docs >/dev/null
 Start chat API:
 
 ```bash
-MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
-MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-MOLSYS_AI_PROJECT_INDEX_DIR=server/chat_api/data/indexes \
-uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001
 ```
 
 Measure an E2E request time:
@@ -175,6 +208,19 @@ Semantic checks (recommended):
 
 ```bash
 python dev/benchmarks/run_chat_bench.py --in dev/benchmarks/questions_v0.jsonl --check-symbols
+```
+
+Stricter semantic check (recommended when you expect the answer to be correct and grounded, even if the model says
+`NOT_DOCUMENTED`):
+
+```bash
+python dev/benchmarks/run_chat_bench.py --in dev/benchmarks/questions_v0.jsonl --check-symbols --strict-symbols
+```
+
+To review results without truncation:
+
+```bash
+python dev/benchmarks/view_run.py dev/benchmarks/runs/<run>.jsonl --only-fail
 ```
 
 Important note:

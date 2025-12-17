@@ -24,6 +24,12 @@ This directory contains the FastAPI chat API used by MolSys-AI. It is the
 - On startup it:
   - builds an embedding-based RAG index from Markdown documents,
   - uses `rag.build_index` and `rag.retriever` to populate the index.
+  - Note: the index can include multiple “kinds” of documents under the docs snapshot:
+    - `docs/` (narrative docs and notebooks),
+    - `api_surface/` (AST-derived signatures + docstrings),
+    - `symbol_cards/` (per-symbol cards),
+    - `recipes/` (tests + notebook recipes, including tutorial/section/cell layers),
+    - `recipe_cards/` (offline LLM-digested recipe cards).
 
 ## Configuration
 
@@ -113,6 +119,13 @@ Optional symbol “re-read” (recommended for API correctness):
 - `MOLSYS_AI_CHAT_REREAD_MAX_SYMBOLS` (default: 2)
 - `MOLSYS_AI_CHAT_REREAD_K_PER_SYMBOL` (default: 2)
 
+RAG debugging (optional):
+
+- `MOLSYS_AI_RAG_LOG_SCORES` (default: false)
+  - If true, logs top retrieval candidates with score breakdown (embeddings/lexical/BM25).
+- `MOLSYS_AI_RAG_LOG_SCORES_TOP` (default: 8)
+  - How many scored candidates to print when `MOLSYS_AI_RAG_LOG_SCORES=1`.
+
 Optional anchors map (deep links to published docs):
 
 - `MOLSYS_AI_DOCS_ANCHORS`
@@ -183,7 +196,7 @@ If the model server is not reachable or fails, a 500 error is returned.
 In a development environment:
 
 ```bash
-uvicorn chat_api.backend:app --reload
+./dev/run_chat_api.sh --reload
 ```
 
 By default this will listen on `http://127.0.0.1:8000` and use:
@@ -205,6 +218,12 @@ Notes:
 - Notebooks are compacted (outputs stripped) and bounded by `--max-bytes-ipynb`.
 - If `--build-api-surface` is enabled, a symbol registry is also written to `server/chat_api/data/docs/_symbols.json`.
 - `dev/sync_rag_corpus.py` always writes a coverage report to `server/chat_api/data/docs/_coverage.json`.
+- For notebook-heavy docs, `--build-recipes` is strongly recommended:
+  - it generates tutorial-level notebook overviews (`recipes/notebooks_tutorials/`),
+  - section-level blocks (`recipes/notebooks_sections/`) with stitched preambles (imports + minimal prior definitions),
+  - and per-cell snippets (`recipes/notebooks/`) for pinpoint retrieval.
+- For stability and user trust, the backend also preserves user-provided identifiers (e.g. PDB ids like `1VII`) in examples/snippets
+  and avoids substituting different ids.
 - To quantify coverage after a refresh, run:
   - `python dev/audit_rag_corpus.py --rescan-sources`
 
@@ -224,7 +243,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python dev/sync_rag_corpus.py --clean --
 Behind a reverse proxy, start uvicorn with proxy headers enabled (recommended):
 
 ```bash
-uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+PYTHONPATH=server:client python -m uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
 ```
 
 ## Health endpoint
@@ -256,7 +275,7 @@ MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
 MOLSYS_AI_DOCS_DIR=/tmp/molsys_ai_docs_smoke \
 MOLSYS_AI_DOCS_INDEX=/tmp/molsys_ai_docs_smoke.pkl \
 MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001 --docs-dir /tmp/molsys_ai_docs_smoke --docs-index /tmp/molsys_ai_docs_smoke.pkl --embeddings sentence-transformers
 ```
 
 Then:

@@ -109,6 +109,22 @@ def _policy_action(
     return "truncate"
 
 
+def _as_str_tuple(value: Any) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        out: list[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return tuple(out)
+    if isinstance(value, str) and value.strip():
+        return (value.strip(),)
+    return tuple()
+
+
+def _as_str_set(value: Any) -> set[str]:
+    return set(_as_str_tuple(value))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit MolSys-AI RAG corpus coverage.")
     parser.add_argument(
@@ -197,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.rescan_sources:
         sync_mod = _load_sync_module()
+        sel_defaults = manifest.get("selection_defaults") or {}
+        if not isinstance(sel_defaults, dict):
+            sel_defaults = {}
         for name, info in sources.items():
             if not isinstance(info, dict):
                 continue
@@ -204,14 +223,27 @@ def main(argv: list[str] | None = None) -> int:
             if not src.exists():
                 continue
 
+            sel = info.get("selection") or {}
+            if not isinstance(sel, dict):
+                sel = {}
+
+            include_dirs = _as_str_tuple(sel.get("include_dirs")) or _as_str_tuple(sel_defaults.get("include_dirs")) or sync_mod.DEFAULT_INCLUDE_DIRS
+            include_root_globs = (
+                _as_str_tuple(sel.get("include_root_globs")) or _as_str_tuple(sel_defaults.get("include_root_globs")) or sync_mod.DEFAULT_INCLUDE_ROOT_GLOBS
+            )
+            exts = _as_str_set(sel.get("text_exts")) or _as_str_set(sel_defaults.get("text_exts")) or sync_mod.DEFAULT_TEXT_EXTS
+            exclude_dir_names = (
+                _as_str_set(sel.get("exclude_dir_names")) or _as_str_set(sel_defaults.get("exclude_dir_names")) or sync_mod.DEFAULT_EXCLUDE_DIR_NAMES
+            )
+
             candidates = list(
                 _iter_candidate_files(
                     sync_mod,
                     src,
-                    include_dirs=sync_mod.DEFAULT_INCLUDE_DIRS,
-                    include_root_globs=sync_mod.DEFAULT_INCLUDE_ROOT_GLOBS,
-                    exts=sync_mod.DEFAULT_TEXT_EXTS,
-                    exclude_dir_names=sync_mod.DEFAULT_EXCLUDE_DIR_NAMES,
+                    include_dirs=include_dirs,
+                    include_root_globs=include_root_globs,
+                    exts=exts,
+                    exclude_dir_names=exclude_dir_names,
                 )
             )
             by_ext = Counter(c.ext for c in candidates)

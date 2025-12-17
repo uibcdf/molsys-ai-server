@@ -50,18 +50,35 @@ The RAG index is built from a **corpus directory** (configured via `MOLSYS_AI_DO
 
 There are two complementary kinds of corpus content:
 
-1. **Literal snapshot (current default)**:
+1. **Literal snapshot (default)**:
    - plain documentation files copied verbatim from the live repos (`*.md`, `*.rst`, `*.txt`).
    - this is what `dev/sync_rag_corpus.py` produces.
 
-2. **Derived corpus (planned)**:
-   - additional “digested” artifacts generated from the literal snapshot (e.g. summaries, FAQs,
-     concept cards, API overviews).
-   - these files are still plain text (so they can be indexed like any other doc), but must include
-     provenance in their content/metadata (what sources they summarize, when, and with which model/prompt).
+2. **Derived corpus (implemented, additive)**:
+   - additional artifacts generated from the literal snapshot to improve operational accuracy for MolSysSuite APIs.
+   - current derived layers include:
+     - `api_surface/` (AST-derived signatures + docstring excerpts),
+     - `symbol_cards/` (per-symbol cards),
+     - `recipes/` (tests + notebook-derived snippets, including tutorial/section/cell layers),
+     - `recipe_cards/` (optional offline LLM-digested recipe cards).
+   - these files are plain text and are indexed together with the snapshot, but must remain clearly
+     separated so they can be rebuilt safely as upstream docs evolve.
 
 The derived corpus is planned because it often improves retrieval quality and answer structure,
 but it must never replace the literal snapshot; it is an additive layer.
+
+## Document kinds (metadata)
+
+During indexing, each chunk is tagged with a `kind` to enable downstream heuristics:
+
+- `docs` (narrative docs + notebooks)
+- `api_surface`
+- `symbol_card`
+- `recipe` (generic recipe)
+- `recipe_section` (notebook section blocks)
+- `tutorial_recipe` (notebook tutorial overviews)
+- `recipe_card` (LLM-digested recipe card)
+- `tutorial_card` (LLM-digested tutorial card)
 
 - `build_index.build_index(source_dir, index_path)` (MVP implementation):
   - Reads `*.md`, `*.rst`, and `*.txt` files under `source_dir`.
@@ -88,6 +105,17 @@ but it must never replace the literal snapshot; it is an additive layer.
   - Optional hybrid rerank:
     - `MOLSYS_AI_RAG_HYBRID_WEIGHT` (default: 0.15) mixes in a lightweight lexical score
       to boost exact identifier matches (e.g. function names like `molsysmt.structure.get_rmsd`).
+  - Optional BM25 lexical retrieval (recommended for API/identifier questions):
+    - Build a BM25 sidecar index by setting `MOLSYS_AI_RAG_BUILD_BM25=1` during index build.
+      This writes `<index>.bm25.pkl` next to the embedding index pickle.
+    - Enable BM25 mixing at query time with:
+      - `MOLSYS_AI_RAG_BM25_WEIGHT` (default: 0.0; try `0.25`).
+    - Preselect tuning knobs (only relevant when BM25 is enabled):
+      - `MOLSYS_AI_RAG_BM25_PRESELECT_FACTOR` (default: 30)
+      - `MOLSYS_AI_RAG_BM25_PRESELECT_MIN` (default: 200)
+  - Embedding preselect tuning knobs:
+    - `MOLSYS_AI_RAG_EMBED_PRESELECT_FACTOR` (default: 10)
+    - `MOLSYS_AI_RAG_EMBED_PRESELECT_MIN` (default: 50)
   - To reduce repetition, retrieval limits how many chunks can be returned from a single
     source file (default: 3). Tune with `MOLSYS_AI_RAG_MAX_CHUNKS_PER_SOURCE`.
   - Returns up to `k` documents ordered by similarity.
@@ -106,7 +134,7 @@ To experiment quickly:
 2. Run the chat API, e.g.:
 
    ```bash
-   uvicorn chat_api.backend:app --reload
+   ./dev/run_chat_api.sh --reload
    ```
 
 3. Ensure the model server is running (stub or real) on

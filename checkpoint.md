@@ -61,6 +61,10 @@ Significant progress has been made in establishing the inference stack with GPU 
   - Observed VRAM usage during long-prompt tests: ~9.4–9.8 GiB on GPU0.
 - **Reproducible smoke runner:** `dev/smoke_vllm.sh` starts the server, performs minimal + multi-turn requests against `POST /v1/engine/chat`, and
   cleans up on exit (including best-effort cleanup of any stray `VLLM::EngineCore` processes).
+- **Recommended local runners:** use `./dev/run_model_server.sh` and `./dev/run_chat_api.sh` to avoid `PYTHONPATH` pitfalls and to get
+  consistent defaults (ports, health URLs, and a port-in-use sanity check for the engine).
+  - Avoid storing your model YAML under `/tmp` (it is typically cleared on reboot). Prefer `dev/model_server.local.yaml` for dev,
+    or `/etc/molsys-ai/model_server.yaml` for production.
 - **Chat API end-to-end (backend):** validated `chat_api` → `model_server`:
   - `POST /v1/chat` with legacy `query` returns `OK`,
   - `POST /v1/chat` with `messages` history preserves context (multi-turn) and returns `Diego` in the test.
@@ -132,9 +136,17 @@ RAG corpus automation (live docs repos):
 
 - A reproducible corpus snapshot + index build is available via `dev/sync_rag_corpus.py` (targets sibling repos:
   `../molsysmt`, `../molsysviewer`, `../pyunitwizard`, `../topomt`).
+- Corpus selection can be managed via a config file:
+  - `python dev/sync_rag_corpus.py --corpus-config dev/corpus_config.toml ...`
+  - example: `dev/corpus_config.toml.example`
+- By default, upstream `examples/` directories are excluded because they can be stale and may reinforce legacy
+  APIs/aliases (opt-in with `dev/sync_rag_corpus.py --include-examples ...`).
 - Optional derived corpus layers (quality work, see `dev/decisions/ADR-021.md`):
   - `--build-symbol-cards` (per-symbol cards),
   - `--build-recipes` (notebook + tests recipes),
+  - `--build-recipes` also extracts:
+    - docstring examples into `recipes/docstrings/`,
+    - fenced code blocks from Markdown pages into `recipes/markdown_snippets/`,
   - optional offline digestion into `recipe_cards/` via `dev/digest_recipes_llm.py`.
 - Large documentation pages and notebooks are included by default:
   - text files larger than `--max-bytes` are truncated in the snapshot (instead of skipped),
@@ -149,6 +161,21 @@ RAG corpus automation (live docs repos):
 - Implemented guardrails: API symbol verification + symbol re-read + semantic benchmark checks (`dev/decisions/ADR-020.md`).
 - Implemented next quality step: code-aware derived corpus (“symbol cards”) + recipe indexing + symbol-aware retrieval
   prioritization for API-heavy questions (`dev/decisions/ADR-021.md`).
+- Improved notebook-derived recipes so they preserve workflow context:
+  - tutorial-level notebook overviews: `server/chat_api/data/docs/<project>/recipes/notebooks_tutorials/`,
+  - section-level blocks with stitched preambles (imports + prior definitions when needed):
+    `server/chat_api/data/docs/<project>/recipes/notebooks_sections/`.
+- Notebook stitching improvements (implemented):
+  - section recipes can include a few early “setup cells” (pre-`##`), to avoid missing non-variable setup context,
+  - use/def stitching is best-effort and includes simple attribute chains and constant-key subscripts.
+- Stronger lexical retrieval (implemented, optional):
+  - BM25 sidecar index (`<index>.bm25.pkl`) can be built with `dev/sync_rag_corpus.py --build-bm25`,
+  - enable mixing at runtime with `MOLSYS_AI_RAG_BM25_WEIGHT` (try `0.25`).
+- Serving-time notebook hierarchy (implemented):
+  - for notebook-derived section/cell sources, `chat_api` auto-attaches the matching tutorial recipe/card when present,
+    so the model receives tutorial context even if retrieval returned only a section/cell.
+- Retrieval tuning/debugging (implemented):
+  - set `MOLSYS_AI_RAG_LOG_SCORES=1` to log score breakdown (embeddings/lexical/BM25) from `chat_api`.
 
 ## 4. Next Steps
 
@@ -158,6 +185,9 @@ The immediate next steps focus on validating the docs chatbot and then iterating
     - Send the port-opening request for `443/tcp` (and optionally `80/tcp`) using `dev/FIREWALL_PORT_REQUEST_TEMPLATE.md`.
     - Until `443` is opened, use the external VPS + SSH reverse tunnel path in `dev/DEPLOY_API.md`.
     - Once `443` is opened, deploy with Caddy + systemd using `dev/RUNBOOK_DEPLOY_443.md`.
+    - For production quality, build code-aware RAG artifacts and BM25 sidecar before enabling public access:
+      - `python dev/sync_rag_corpus.py --clean --build-api-surface --build-symbol-cards --build-recipes --build-index --build-project-indices --build-anchors`
+      - `python dev/sync_rag_corpus.py --clean --build-index --build-bm25 --build-project-indices`
 1.  **Widget integration smoke:** Run `model_server` (vLLM) + `chat_api` together and verify that the web widget (Sphinx)
     can talk to `POST /v1/chat` in multi-turn mode (`messages` history), returning answers that cite `[1]`, `[2]` and
     sources that deep-link into `https://www.uibcdf.org/<tool>/...#Label`.
@@ -179,9 +209,10 @@ The immediate next steps focus on validating the docs chatbot and then iterating
     - **Hybrid retrieval:** enable lexical rerank (env `MOLSYS_AI_RAG_HYBRID_WEIGHT`) to improve exact API name matching.
     - **Serious baseline (implemented):** the current minimal “serious” stack is:
       - RAG (segmented indices + hybrid rerank),
+      - optional BM25 sidecar + mixing (`MOLSYS_AI_RAG_BM25_WEIGHT`),
       - symbol verification (`MOLSYS_AI_CHAT_VERIFY_SYMBOLS`),
       - symbol re-read (`MOLSYS_AI_CHAT_REREAD_SYMBOLS`),
-      - semantic benchmark checks (`dev/benchmarks/run_chat_bench.py --check-symbols`).
+      - semantic benchmark checks (`dev/benchmarks/run_chat_bench.py --check-symbols`, optionally `--strict-symbols`).
     - **Next quality target:** evolve toward:
       - RAG + verification + derived corpus + stronger reranking,
       - then fine-tuning (LoRA/QLoRA) with a curated dataset.
@@ -190,8 +221,15 @@ The immediate next steps focus on validating the docs chatbot and then iterating
       (ADR: `dev/decisions/ADR-021.md`).
     - **Next derived-corpus step:** optionally generate LLM-digested `recipe_cards/` offline and, once validated, index and
       prioritize them in retrieval (ADR: `dev/decisions/ADR-021.md`).
-    - **Next code-aware improvement:** extract docstring examples into `recipes/docstrings/` (doctests / `Examples:` blocks /
-      fenced code) so they become retrievable snippets tied to symbols (ADR: `dev/decisions/ADR-021.md`).
+    - **Notebook hierarchy (implemented):** tutorial → section → cell extraction is now part of the recipes snapshot
+      (tutorial overviews + section blocks + per-cell snippets). This reduces “missing imports/variables” when a section
+      is retrieved in isolation (ADR: `dev/decisions/ADR-021.md`).
+    - **Code-aware recipe expansion (implemented):**
+      - docstring examples are extracted into `recipes/docstrings/` (doctests / `Examples:` blocks / fenced code),
+      - Markdown fenced code blocks are extracted into `recipes/markdown_snippets/`.
+    - **Next retrieval step (recommended):**
+      - continue tightening explicit notebook hierarchical retrieval (tutorial → section → cell) and stitching,
+      - consider an optional learned reranker (cross-encoder) only after measuring BM25 + notebook hierarchy impact.
     - **Coverage audit:** after each corpus refresh, run `python dev/audit_rag_corpus.py --rescan-sources` and tune:
       - `--max-bytes`, `--max-bytes-ipynb`, and `--include-large-text`,
       - `--api-surface-max-modules` / `--api-surface-max-symbols` (use `0` for no limit when doing a full coverage pass).
@@ -199,6 +237,14 @@ The immediate next steps focus on validating the docs chatbot and then iterating
 5.  **Expand local agent tools (client-side):**
     - Keep tool execution local-only (`molsys-ai agent`), and avoid server environments importing MolSysSuite toolchains.
     - Begin implementing new tools from the `molsysmt` ecosystem in `client/agent/tools/`, following the `ROADMAP.md` and ADRs.
+    - **Agent runtime verification (important):** when the agent decides to use a MolSysSuite API symbol (e.g. `Z.Y.X`),
+      it must re-check the symbol before acting:
+      - existence (import/registry),
+      - signature (`inspect.signature`) and default kwargs,
+      - docstring/help (full, not only the first line),
+      - optional source read (`inspect.getsource`) when semantics are unclear,
+      - optional micro-tests in a sandbox to validate input/output types.
+      This introspection belongs to the local agent (or a separate “inspector” service), not the vLLM serving environment.
 6.  **Multi-GPU note (optional):** Only if we need more context or larger models, test `tensor_parallel_size=3` across the
     3× RTX 2080 Ti GPUs.
 7.  **Prepare fine-tuning dataset (Roadmap v0.5):**

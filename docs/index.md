@@ -7,7 +7,7 @@ For now, the chatbot does not answer real questions; it simply shows a
 friendly placeholder message (or, in backend mode, calls the chat API
 backend and displays an answer plus a small “Sources” dropdown per reply).
 In future iterations it will call the MolSys-AI backend to answer questions
-about the MolSys\* ecosystem documentation and workflows.
+about the MolSysSuite documentation and workflows.
 
 
 ## AI helper (pilot)
@@ -50,7 +50,7 @@ Recommended: use the bundled runner (builds docs, starts the servers, validates 
 MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
 MOLSYS_AI_CORS_ORIGINS=http://127.0.0.1:8080 \
 MOLSYS_AI_EMBEDDINGS=sentence-transformers \
-uvicorn chat_api.backend:app --host 127.0.0.1 --port 8000
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001 --cors http://127.0.0.1:8080
 ```
 
 3) Build and serve this Sphinx site:

@@ -114,7 +114,10 @@ of source URLs.
   - `MOLSYS_AI_API_KEY=... molsys-ai chat -m "hello"`
 
 - Override the server URL (advanced / internal):
-  - `molsys-ai chat --server-url http://127.0.0.1:8001 -m "hello"`
+  - `molsys-ai chat --server-url http://127.0.0.1:8000 -m "hello"`
+
+Note: `http://127.0.0.1:8001` is the internal engine endpoint (`POST /v1/engine/chat`) and is not intended
+for direct CLI use.
 
 ## Notes and future work
 

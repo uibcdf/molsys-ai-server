@@ -31,6 +31,20 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw in {"1", "true", "yes", "y", "on"}
 
 
+def _maybe_build_bm25_sidecar(docs: list[Document], index_path: Path) -> None:
+    if not _env_bool("MOLSYS_AI_RAG_BUILD_BM25", False):
+        return
+    try:
+        from .bm25 import build_bm25_index, bm25_sidecar_path, save_bm25
+    except Exception:
+        return
+    bm25_out = bm25_sidecar_path(index_path)
+    print(f"Building BM25 sidecar: {bm25_out}")
+    bm25 = build_bm25_index((d.content for d in docs))
+    save_bm25(bm25, bm25_out)
+    print(f"BM25 sidecar saved to {bm25_out}")
+
+
 def _looks_like_myst_label(line: str) -> str | None:
     s = line.strip()
     if not (s.startswith("(") and s.endswith(")=")):
@@ -221,6 +235,13 @@ def _classify_doc(rel_posix: str) -> str:
         return "symbol_card"
     if "/api_surface/" in p:
         return "api_surface"
+    # Tutorial-level derived sources (notebooks) are distinct from generic recipes.
+    if "/recipe_cards/notebooks_tutorials/" in p:
+        return "tutorial_card"
+    if "/recipes/notebooks_tutorials/" in p:
+        return "tutorial_recipe"
+    if "/recipes/notebooks_sections/" in p:
+        return "recipe_section"
     if "/recipes/" in p:
         return "recipe"
     if "/recipe_cards/" in p:
@@ -306,6 +327,8 @@ def build_index(source_dir: Path, index_path: Path) -> None:
     index_path.parent.mkdir(parents=True, exist_ok=True)
     with index_path.open("wb") as f:
         pickle.dump(docs, f)
+
+    _maybe_build_bm25_sidecar(docs, index_path)
 
     print(f"Index built and saved to {index_path}")
 
@@ -450,5 +473,7 @@ def build_index_parallel(
     index_path.parent.mkdir(parents=True, exist_ok=True)
     with index_path.open("wb") as f:
         pickle.dump(merged, f)
+
+    _maybe_build_bm25_sidecar(merged, index_path)
 
     print(f"Index built (parallel) with {len(merged)} chunks and saved to {index_path}")

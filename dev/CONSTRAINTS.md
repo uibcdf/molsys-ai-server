@@ -45,6 +45,11 @@ This document lists current constraints and assumptions for the initial phase of
 - Do not mix MolSysSuite toolchains into the vLLM inference environment (some tools pull extra CUDA-related stacks).
 - Local tool execution belongs to the client-side agent (`molsys-ai agent`) and should run
   in a separate environment when needed.
+- Some hosts may have restricted outbound network access. When running batch jobs that should not attempt downloads,
+  set:
+  - `HF_HUB_OFFLINE=1`
+  - `TRANSFORMERS_OFFLINE=1`
+  This assumes the model weights and embedding model are already cached or available locally.
 
 ## Deployment reality
 

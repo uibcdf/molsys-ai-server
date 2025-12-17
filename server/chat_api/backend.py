@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from agent.model_client import HTTPModelClient
 from rag.build_index import build_index
-from rag.retriever import Document, load_index, retrieve
+from rag.retriever import Document, ScoredDocument, load_index, retrieve, retrieve_scored
 
 app = FastAPI(title="MolSys-AI Chat API (RAG Orchestrator, MVP)")
 
@@ -270,10 +270,28 @@ def _is_symbol_card_doc(doc: Document) -> bool:
 def _is_recipe_doc(doc: Document) -> bool:
     kind = str(doc.metadata.get("kind") or "").strip().lower()
     if kind:
-        return kind in {"recipe", "recipe_card"}
+        return kind in {"recipe", "recipe_section", "tutorial_recipe", "recipe_card", "tutorial_card"}
     raw = str(doc.metadata.get("path") or "")
     p = raw.replace("\\", "/")
     return "/recipes/" in p
+
+
+def _is_tutorial_recipe_doc(doc: Document) -> bool:
+    kind = str(doc.metadata.get("kind") or "").strip().lower()
+    if kind:
+        return kind == "tutorial_recipe"
+    raw = str(doc.metadata.get("path") or "")
+    p = raw.replace("\\", "/")
+    return "/recipes/notebooks_tutorials/" in p
+
+
+def _is_recipe_section_doc(doc: Document) -> bool:
+    kind = str(doc.metadata.get("kind") or "").strip().lower()
+    if kind:
+        return kind == "recipe_section"
+    raw = str(doc.metadata.get("path") or "")
+    p = raw.replace("\\", "/")
+    return "/recipes/notebooks_sections/" in p
 
 
 def _is_recipe_card_doc(doc: Document) -> bool:
@@ -283,6 +301,15 @@ def _is_recipe_card_doc(doc: Document) -> bool:
     raw = str(doc.metadata.get("path") or "")
     p = raw.replace("\\", "/")
     return "/recipe_cards/" in p
+
+
+def _is_tutorial_card_doc(doc: Document) -> bool:
+    kind = str(doc.metadata.get("kind") or "").strip().lower()
+    if kind:
+        return kind == "tutorial_card"
+    raw = str(doc.metadata.get("path") or "")
+    p = raw.replace("\\", "/")
+    return "/recipe_cards/notebooks_tutorials/" in p
 
 
 def _looks_like_api_question(query: str) -> bool:
@@ -316,12 +343,226 @@ def _dedupe_docs(docs: list[Document]) -> list[Document]:
     return out
 
 
+def _dedupe_scored_docs(docs: list[ScoredDocument]) -> list[ScoredDocument]:
+    best: dict[tuple[str, str, str, str], ScoredDocument] = {}
+    for sd in docs:
+        d = sd.doc
+        key = (
+            str(d.metadata.get("path") or ""),
+            str(d.metadata.get("section") or ""),
+            str(d.metadata.get("label") or ""),
+            (d.content or "")[:200],
+        )
+        prev = best.get(key)
+        if prev is None or sd.score > prev.score:
+            best[key] = sd
+    # Keep stable ordering by score, then by path.
+    return sorted(best.values(), key=lambda sd: (sd.score, str(sd.doc.metadata.get("path") or "")), reverse=True)
+
+
+_NOTEBOOK_RECIPE_PREFIXES = (
+    "/recipes/notebooks_tutorials/",
+    "/recipes/notebooks_sections/",
+    "/recipes/notebooks/",
+    "/recipe_cards/notebooks_tutorials/",
+    "/recipe_cards/notebooks_sections/",
+    "/recipe_cards/notebooks/",
+)
+
+
+def _notebook_key(doc: Document) -> str | None:
+    """Return a stable notebook key for notebook-derived recipe docs, else None."""
+    rel = str(doc.metadata.get("relpath") or "").replace("\\", "/")
+    if not rel:
+        return None
+    for pref in _NOTEBOOK_RECIPE_PREFIXES:
+        if pref not in f"/{rel}":
+            continue
+        # rel: <project>/<...pref...>/<notebook_rel_without_suffix>/<leaf>.md
+        # Example:
+        #   molsysmt/recipes/notebooks_sections/docs/content/user/tools/basic/select/section_0001.md
+        parts = rel.split(pref.strip("/"), 1)
+        if len(parts) != 2:
+            continue
+        tail = parts[1].lstrip("/")
+        if not tail:
+            continue
+        segs = tail.split("/")
+        if len(segs) < 2:
+            continue
+        notebook_rel = "/".join(segs[:-1])
+        if notebook_rel:
+            return f"{doc.metadata.get('project') or ''}:{notebook_rel}"
+    return None
+
+
+def _is_notebook_recipe(doc: Document) -> bool:
+    rel = str(doc.metadata.get("relpath") or "").replace("\\", "/")
+    if not rel:
+        return False
+    rel2 = f"/{rel}"
+    return any(p in rel2 for p in _NOTEBOOK_RECIPE_PREFIXES)
+
+
+def _safe_read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return None
+
+
+def _doc_from_disk(path: Path, *, kind: str) -> Document | None:
+    text = _safe_read_text(path)
+    if not text or not text.strip():
+        return None
+    meta: dict[str, Any] = {"path": str(path), "kind": kind}
+    try:
+        rel = path.resolve().relative_to(DOCS_SOURCE_DIR.resolve())
+        meta["relpath"] = rel.as_posix()
+        if rel.parts:
+            meta["project"] = rel.parts[0]
+    except Exception:
+        pass
+    return Document(content=text.strip(), metadata=meta)
+
+
+def _tutorial_path_for_notebook_recipe(doc: Document) -> tuple[Path, str] | None:
+    rel = str(doc.metadata.get("relpath") or "").replace("\\", "/")
+    if not rel:
+        return None
+
+    # Map sections/cells → tutorial within the same notebook directory.
+    mapping = [
+        ("/recipes/notebooks_sections/", "/recipes/notebooks_tutorials/", "tutorial_recipe"),
+        ("/recipes/notebooks/", "/recipes/notebooks_tutorials/", "tutorial_recipe"),
+        ("/recipe_cards/notebooks_sections/", "/recipe_cards/notebooks_tutorials/", "tutorial_card"),
+        ("/recipe_cards/notebooks/", "/recipe_cards/notebooks_tutorials/", "tutorial_card"),
+    ]
+    rel2 = f"/{rel}"
+    for src_pref, dst_pref, kind in mapping:
+        if src_pref not in rel2:
+            continue
+        # rel: <project><src_pref><notebook_rel>/<leaf>.md
+        before, after = rel.split(src_pref.strip("/"), 1)
+        tail = after.lstrip("/")
+        parts = tail.split("/")
+        if len(parts) < 2:
+            continue
+        notebook_rel = "/".join(parts[:-1])
+        out_rel = (before.strip("/") + dst_pref + notebook_rel + "/tutorial.md").lstrip("/")
+        return (DOCS_SOURCE_DIR / out_rel, kind)
+    return None
+
+
+def _augment_with_notebook_tutorials(docs: list[Document], *, k: int) -> list[Document]:
+    """Ensure notebook-derived answers include the matching tutorial recipe/card when available."""
+    if not docs:
+        return docs
+    have = {str(d.metadata.get("path") or "") for d in docs}
+    inserts: list[tuple[int, Document]] = []
+    for idx, d in enumerate(docs):
+        if not _is_notebook_recipe(d):
+            continue
+        rec = _tutorial_path_for_notebook_recipe(d)
+        if not rec:
+            continue
+        tpath, kind = rec
+        if str(tpath) in have:
+            continue
+        tdoc = _doc_from_disk(tpath, kind=kind)
+        if not tdoc:
+            continue
+        # Insert tutorials early, right after any leading symbol cards.
+        inserts.append((idx, tdoc))
+        have.add(str(tpath))
+
+    if not inserts:
+        return docs
+
+    # Compute insertion point: after the last symbol card in the current list.
+    insert_at = 0
+    for i, d in enumerate(docs):
+        if str(d.metadata.get("kind") or "").strip().lower() == "symbol_card":
+            insert_at = i + 1
+        else:
+            break
+
+    for _, tdoc in inserts:
+        docs.insert(insert_at, tdoc)
+        insert_at += 1
+
+    # Keep within k by trimming from the end (least preferred).
+    return _dedupe_docs(docs)[:k]
+
+
+def _log_scored_docs(query: str, scored: list[ScoredDocument], *, label: str) -> None:
+    if not _env_bool("MOLSYS_AI_RAG_LOG_SCORES", False):
+        return
+    top = int((os.environ.get("MOLSYS_AI_RAG_LOG_SCORES_TOP") or "8").strip() or "8")
+    top = max(top, 1)
+    print(f"[rag] scores ({label}) query={query!r}")
+    for i, sd in enumerate(scored[:top], start=1):
+        d = sd.doc
+        kind = str(d.metadata.get("kind") or "")
+        rel = str(d.metadata.get("relpath") or d.metadata.get("path") or "")
+        score = f"{sd.score:.4f}"
+        sim = f"{sd.sim:.4f}"
+        lex = f"{sd.lex_norm:.4f}"
+        bm = f"{sd.bm25_norm:.4f}"
+        print(f"[rag]  {i:02d} score={score} sim={sim} lex={lex} bm25={bm} kind={kind} rel={rel}")
+
+
+def _pick_notebook_cluster(scored: list[ScoredDocument], *, want: int) -> list[ScoredDocument]:
+    """Pick a coherent tutorial/section/cell set from a single notebook (best-effort)."""
+    if want <= 0:
+        return []
+    by_nb: dict[str, list[ScoredDocument]] = {}
+    for sd in scored:
+        key = _notebook_key(sd.doc)
+        if not key:
+            continue
+        by_nb.setdefault(key, []).append(sd)
+    if not by_nb:
+        return []
+    # Choose the notebook whose best doc has the highest score.
+    best_nb = max(by_nb.items(), key=lambda kv: max(d.score for d in kv[1]))[0]
+    docs = sorted(by_nb[best_nb], key=lambda sd: sd.score, reverse=True)
+
+    def kind_of(d: Document) -> str:
+        return str(d.metadata.get("kind") or "").strip().lower()
+
+    tutorial = [sd for sd in docs if kind_of(sd.doc) in {"tutorial_card", "tutorial_recipe"}]
+    sections = [sd for sd in docs if kind_of(sd.doc) in {"recipe_section"}]
+    cells = [sd for sd in docs if kind_of(sd.doc) == "recipe" and "/recipes/notebooks/" in f"/{str(sd.doc.metadata.get('relpath') or '')}"]
+
+    picked: list[ScoredDocument] = []
+    if tutorial:
+        picked.append(tutorial[0])
+    if len(picked) < want and sections:
+        picked.append(sections[0])
+    if len(picked) < want and cells:
+        picked.append(cells[0])
+    if len(picked) < want:
+        for sd in docs:
+            if sd in picked:
+                continue
+            picked.append(sd)
+            if len(picked) >= want:
+                break
+    return picked[:want]
+
+
 def _select_docs_for_api_question(candidates: list[Document], *, k: int) -> list[Document]:
     """Select a balanced set of sources for API-heavy questions.
 
     Preference order:
       1) symbol cards (per-symbol docs)
-      2) recipes (tests/notebooks)
+      2) tutorial recipes (notebook overviews)
+      3) recipe sections (multi-cell notebook blocks)
+      4) recipes (tests/per-cell snippets/other)
       3) api_surface (per-module docs)
       4) narrative docs
     """
@@ -330,23 +571,85 @@ def _select_docs_for_api_question(candidates: list[Document], *, k: int) -> list
         return []
 
     symbol_cards = [d for d in candidates if _is_symbol_card_doc(d)]
-    recipe_cards = [d for d in candidates if _is_recipe_card_doc(d)]
-    recipes = [d for d in candidates if _is_recipe_doc(d) and d not in recipe_cards]
+    tutorial_cards = [d for d in candidates if _is_tutorial_card_doc(d)]
+    recipe_cards = [d for d in candidates if _is_recipe_card_doc(d) and d not in tutorial_cards]
+    tutorial_recipes = [d for d in candidates if _is_tutorial_recipe_doc(d) and d not in tutorial_cards]
+    recipe_sections = [d for d in candidates if _is_recipe_section_doc(d)]
+    recipes = [d for d in candidates if _is_recipe_doc(d) and d not in tutorial_cards and d not in recipe_cards and d not in tutorial_recipes and d not in recipe_sections]
     api_surface = [d for d in candidates if _is_api_surface_doc(d)]
-    rest = [d for d in candidates if d not in symbol_cards and d not in recipe_cards and d not in recipes and d not in api_surface]
+    rest = [
+        d
+        for d in candidates
+        if d not in symbol_cards
+        and d not in tutorial_cards
+        and d not in recipe_cards
+        and d not in tutorial_recipes
+        and d not in recipe_sections
+        and d not in recipes
+        and d not in api_surface
+    ]
 
     # Quotas tuned for small k (default k=5).
     n_symbol = min(2, k)
-    n_recipe_card = min(1, max(k - n_symbol, 0))
-    n_recipe = min(1, max(k - n_symbol - n_recipe_card, 0))
-    n_api = min(1, max(k - n_symbol - n_recipe_card - n_recipe, 0))
+    n_tutorial = min(1, max(k - n_symbol, 0))
+    n_section = min(1, max(k - n_symbol - n_tutorial, 0))
+    n_recipe_card = min(1, max(k - n_symbol - n_tutorial - n_section, 0))
+    n_recipe = min(1, max(k - n_symbol - n_tutorial - n_section - n_recipe_card, 0))
+    n_api = min(1, max(k - n_symbol - n_tutorial - n_section - n_recipe_card - n_recipe, 0))
 
     picked: list[Document] = []
     picked.extend(symbol_cards[:n_symbol])
+    picked.extend(tutorial_cards[:n_tutorial])
+    if len(picked) < (n_symbol + n_tutorial):
+        picked.extend(tutorial_recipes[: max(0, n_symbol + n_tutorial - len(picked))])
+    picked.extend(recipe_sections[:n_section])
     picked.extend(recipe_cards[:n_recipe_card])
     picked.extend(recipes[:n_recipe])
     picked.extend(api_surface[:n_api])
     picked.extend(rest)
+    picked = _dedupe_docs(picked)
+    return picked[:k]
+
+
+def _select_scored_for_api_question(scored: list[ScoredDocument], *, k: int) -> list[Document]:
+    """Score-aware selection for API-heavy questions, with notebook hierarchical preference."""
+    if not scored or k <= 0:
+        return []
+
+    def kind(doc: Document) -> str:
+        return str(doc.metadata.get("kind") or "").strip().lower()
+
+    symbol_cards = [sd for sd in scored if kind(sd.doc) == "symbol_card"]
+    api_surface = [sd for sd in scored if kind(sd.doc) == "api_surface"]
+    recipe_cards = [sd for sd in scored if kind(sd.doc) == "recipe_card"]
+    tutorials = [sd for sd in scored if kind(sd.doc) in {"tutorial_recipe", "tutorial_card"}]
+    sections = [sd for sd in scored if kind(sd.doc) == "recipe_section"]
+    recipes = [sd for sd in scored if kind(sd.doc) == "recipe"]
+    rest = [sd for sd in scored if sd not in symbol_cards and sd not in api_surface and sd not in recipe_cards and sd not in tutorials and sd not in sections and sd not in recipes]
+
+    # Pick top symbol cards first.
+    picked: list[Document] = []
+    picked.extend([sd.doc for sd in symbol_cards[: min(2, k)]])
+
+    # Notebook cluster: prefer pulling a coherent tutorial+section when available.
+    remaining_slots = max(k - len(picked), 0)
+    notebook_pool = [sd for sd in (tutorials + sections + recipes + recipe_cards) if _is_notebook_recipe(sd.doc)]
+    notebook_picked = _pick_notebook_cluster(notebook_pool, want=min(2, remaining_slots))
+    picked.extend([sd.doc for sd in notebook_picked])
+
+    remaining_slots = max(k - len(picked), 0)
+    if remaining_slots:
+        picked.extend([sd.doc for sd in recipe_cards[:remaining_slots]])
+    remaining_slots = max(k - len(picked), 0)
+    if remaining_slots:
+        picked.extend([sd.doc for sd in recipes[:remaining_slots]])
+    remaining_slots = max(k - len(picked), 0)
+    if remaining_slots:
+        picked.extend([sd.doc for sd in api_surface[:remaining_slots]])
+    remaining_slots = max(k - len(picked), 0)
+    if remaining_slots:
+        picked.extend([sd.doc for sd in rest[:remaining_slots]])
+
     picked = _dedupe_docs(picked)
     return picked[:k]
 
@@ -656,6 +959,8 @@ def _default_system_prompt() -> str:
         "Never use the term 'MolSys*'.\n"
         "Prefer precise, actionable answers. If you are not sure, ask a clarifying question.\n"
         "Do not invent APIs, flags, or behaviors.\n"
+        "When writing Python snippets, use canonical imports.\n"
+        "- For MolSysMT, use: `import molsysmt as msm` (never `import msmt`).\n"
     )
 
 
@@ -666,6 +971,70 @@ def _user_explicitly_wants_sources(text: str) -> bool:
 
 def _has_bracket_citations(text: str) -> bool:
     return bool(re.search(r"\[\d+\]", text or ""))
+
+_PDB_ID_RE = re.compile(r"\b[0-9][A-Za-z0-9]{3}\b")
+
+
+def _extract_pdb_ids(text: str) -> list[str]:
+    """Extract likely PDB ids from text, preserving original casing."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _PDB_ID_RE.finditer(text or ""):
+        s = m.group(0)
+        if s.lower() in seen:
+            continue
+        seen.add(s.lower())
+        out.append(s)
+    return out
+
+
+def _has_bad_molsysmt_alias(text: str) -> bool:
+    """Detect common hallucinated alias/module names for molsysmt."""
+    s = text or ""
+    if re.search(r"\bimport\s+msmt\b", s):
+        return True
+    if re.search(r"\bmsmt\.", s):
+        return True
+    return False
+
+
+def _build_identifier_rewrite_prompt(
+    *,
+    question: str,
+    draft_answer: str,
+    context_block: str,
+    show_sources: bool,
+    pdb_ids: list[str],
+    forbid_msmt: bool,
+) -> list[dict[str, str]]:
+    system = (
+        "You are MolSys-AI, a specialist assistant for the UIBCDF MolSysSuite ecosystem.\n"
+        "Rewrite the draft answer to preserve user-provided identifiers and ensure API correctness.\n"
+        "- Use the term 'MolSysSuite' (never 'MolSys*').\n"
+        "- Do not invent APIs, flags, or behaviors.\n"
+        "- Keep the answer concise.\n"
+    )
+    if pdb_ids:
+        system += "- You MUST use these PDB ids exactly as provided (do not substitute other examples): " + ", ".join(pdb_ids) + "\n"
+    if forbid_msmt:
+        system += "- You MUST NOT use `msmt` as a module/alias. Use `import molsysmt as msm`.\n"
+    if show_sources:
+        system += "- Keep bracket citations like [1], [2] aligned with the sources list.\n"
+    system += "Return ONLY the final answer text.\n"
+
+    prefix = "Documentation excerpts:\n\n" if show_sources else "Documentation excerpts (do not cite):\n\n"
+    return [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                f"{prefix}{context_block}\n\n"
+                f"Question: {question}\n\n"
+                "Draft answer:\n"
+                f"{draft_answer}\n"
+            ),
+        },
+    ]
 
 
 def _infer_project_hint(query: str) -> str | None:
@@ -795,17 +1164,21 @@ async def chat(
         hint = _infer_project_hint(query)
         is_api_q = _looks_like_api_question(query)
 
+        retrieve_k = max(req_k * 8, 40) if is_api_q else max(req_k * 4, req_k)
         if hint and hint in _PROJECT_INDICES:
             idx = _PROJECT_INDICES[hint]
-            candidates = retrieve(query, idx, k=max(req_k * 8, 40) if is_api_q else req_k)
+            scored = retrieve_scored(query, idx, k=retrieve_k)
         else:
-            candidates = retrieve(query, _DOCS_INDEX, k=max(req_k * 8, 40) if is_api_q else max(req_k * 4, req_k))
+            scored = retrieve_scored(query, _DOCS_INDEX, k=retrieve_k)
             if hint:
-                filtered = [d for d in candidates if _doc_project(d) == hint]
-                candidates = filtered or candidates
+                filtered = [sd for sd in scored if _doc_project(sd.doc) == hint]
+                scored = filtered or scored
 
-        candidates = _dedupe_docs(candidates)
-        docs = _select_docs_for_api_question(candidates, k=req_k) if is_api_q else candidates[:req_k]
+        scored = _dedupe_scored_docs(scored)
+        _log_scored_docs(query, scored, label=("api" if is_api_q else "generic"))
+        docs = _select_scored_for_api_question(scored, k=req_k) if is_api_q else [sd.doc for sd in scored[:req_k]]
+        if is_api_q:
+            docs = _augment_with_notebook_tutorials(docs, k=req_k)
 
     context_lines: list[str] = []
     sources: list[Source] = []
@@ -874,6 +1247,33 @@ async def chat(
 
     client = HTTPModelClient(base_url=ENGINE_URL, api_key=ENGINE_API_KEY)
     answer = client.generate(messages)
+
+    # Enforce stable identifiers (best-effort): if the user provided a PDB id, do not
+    # replace it with a different example. This also helps benchmark stability.
+    pdb_ids = _extract_pdb_ids(query)
+    if pdb_ids:
+        answer_l = (answer or "").lower()
+        missing = [pid for pid in pdb_ids if pid.lower() not in answer_l]
+        forbid_msmt = _has_bad_molsysmt_alias(answer)
+        if missing or forbid_msmt:
+            try:
+                rewrite_messages = _build_identifier_rewrite_prompt(
+                    question=query,
+                    draft_answer=answer,
+                    context_block=context_block,
+                    show_sources=show_sources,
+                    pdb_ids=pdb_ids,
+                    forbid_msmt=forbid_msmt,
+                )
+                rewritten = client.generate(
+                    rewrite_messages,
+                    generation={"temperature": 0.0, "top_p": 1.0, "max_tokens": 600},
+                )
+                rewritten = (rewritten or "").strip()
+                if rewritten:
+                    answer = rewritten
+            except Exception:
+                pass
 
     # Best-effort enforcement: when sources are enabled, ensure the answer includes
     # bracket citations like [1]. This avoids confusing UX where a sources list is

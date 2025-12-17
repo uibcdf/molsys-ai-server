@@ -89,6 +89,35 @@ if [[ -z "${MOLSYS_AI_MODEL_CONFIG:-}" ]]; then
   echo "Tip: see server/model_server/config.example.yaml" >&2
   exit 1
 fi
+export MOLSYS_AI_MODEL_CONFIG
+if [[ ! -f "${MOLSYS_AI_MODEL_CONFIG}" ]]; then
+  echo "[model_server] ERROR: config file not found: ${MOLSYS_AI_MODEL_CONFIG}" >&2
+  echo "[model_server] Tip: start from server/model_server/config.example.yaml" >&2
+  exit 1
+fi
+
+# Fail fast if the port is already in use. Otherwise the readiness probe might
+# accidentally talk to an existing server.
+if command -v ss >/dev/null 2>&1; then
+  existing_listener="$(ss -ltnp 2>/dev/null | grep -E "[:.]${PORT}\\b" || true)"
+  if [[ -n "${existing_listener}" ]]; then
+    echo "[model_server] ERROR: port ${PORT} already has a listener. Stop the existing server or use --port." >&2
+    echo "[model_server] Listener(s):" >&2
+    echo "${existing_listener}" >&2
+    existing_pid="$(echo "${existing_listener}" | sed -n 's/.*pid=\\([0-9]\\+\\).*/\\1/p' | head -n 1 || true)"
+    if [[ -n "${existing_pid}" ]]; then
+      echo "[model_server] Detected existing PID: ${existing_pid} (try: kill ${existing_pid})" >&2
+    fi
+    exit 1
+  fi
+elif command -v lsof >/dev/null 2>&1; then
+  if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "[model_server] ERROR: port ${PORT} already has a listener. Stop the existing server or use --port." >&2
+    echo "[model_server] Listener(s):" >&2
+    lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >&2 || true
+    exit 1
+  fi
+fi
 
 # Make nvcc visible for vLLM FlashInfer JIT (if installed system-wide).
 export CUDA_HOME
@@ -99,6 +128,7 @@ if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
 fi
 
 echo "[model_server] starting on http://${HOST}:${PORT}"
+echo "[model_server] config: ${MOLSYS_AI_MODEL_CONFIG}"
 echo "[model_server] OpenAPI: http://${HOST}:${PORT}/docs"
 echo "[model_server] Health:  curl -fsS http://${HOST}:${PORT}/healthz"
 
@@ -124,6 +154,11 @@ if [[ "${WARMUP}" == "1" ]]; then
 
   python -m uvicorn "${args[@]}" &
   UVICORN_PID=$!
+  sleep 0.2
+  if ! kill -0 "${UVICORN_PID}" >/dev/null 2>&1; then
+    echo "[model_server] ERROR: uvicorn exited immediately (check logs above)." >&2
+    exit 1
+  fi
 
   echo "[model_server] waiting for readiness..."
   for _ in $(seq 1 240); do
@@ -140,10 +175,20 @@ if [[ "${WARMUP}" == "1" ]]; then
   if [[ -n "${MOLSYS_AI_ENGINE_API_KEY:-}" ]]; then
     API_HEADER=(-H "Authorization: Bearer ${MOLSYS_AI_ENGINE_API_KEY}")
   fi
-  curl -fsS -X POST "http://${HOST}:${PORT}/v1/engine/chat" \
-    -H 'Content-Type: application/json' \
-    "${API_HEADER[@]}" \
-    -d '{"messages":[{"role":"user","content":"warmup: reply only OK"}]}' >/dev/null
+  resp_file="$(mktemp -t molsys_ai_engine_warmup.XXXXXX.json)"
+  http_code="$(
+    curl -sS -o "${resp_file}" -w '%{http_code}' -X POST "http://${HOST}:${PORT}/v1/engine/chat" \
+      -H 'Content-Type: application/json' \
+      "${API_HEADER[@]}" \
+      -d '{"messages":[{"role":"user","content":"warmup: reply only OK"}]}'
+  )"
+  if [[ "${http_code}" != "200" ]]; then
+    echo "[model_server] warmup failed (HTTP ${http_code}). Response body:" >&2
+    sed -n '1,200p' "${resp_file}" >&2 || true
+    rm -f "${resp_file}" || true
+    exit 1
+  fi
+  rm -f "${resp_file}" || true
   echo "[model_server] warmup done"
 
   trap - EXIT

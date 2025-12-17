@@ -32,6 +32,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Tuple
 
+try:
+    import tomllib  # Python 3.11+
+except Exception:  # pragma: no cover
+    tomllib = None  # type: ignore[assignment]
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # Allow running this script without installing the repo as a package by ensuring
@@ -57,7 +62,7 @@ DEFAULT_DOCS_BASE_URL = {
     "topomt": "https://www.uibcdf.org/topomt",
 }
 
-DEFAULT_INCLUDE_DIRS = ("docs", "doc", "examples", "devguide")
+DEFAULT_INCLUDE_DIRS = ("docs", "doc", "devguide")
 DEFAULT_INCLUDE_ROOT_GLOBS = (
     "README*.md",
     "README*.rst",
@@ -95,6 +100,15 @@ DEFAULT_EXCLUDE_DIR_NAMES = {
 class SourceSpec:
     name: str
     path: Path
+
+
+@dataclass(frozen=True)
+class SelectionSpec:
+    include_dirs: tuple[str, ...]
+    include_root_globs: tuple[str, ...]
+    exts: set[str]
+    exclude_dir_names: set[str]
+    docs_base_url: str | None
 
 
 def _safe_read_text(path: Path) -> str | None:
@@ -431,7 +445,7 @@ def _write_symbol_cards_snapshot(
     }
 
 
-_PY_IMPORT_RE = re.compile(r"^\\s*(?:from|import)\\s+([A-Za-z_][A-Za-z0-9_\\.]+)", flags=re.M)
+_PY_IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_\.]+)", flags=re.M)
 
 
 def _projects_mentioned_in_python(code: str) -> set[str]:
@@ -447,10 +461,10 @@ def _extract_import_aliases_from_python(code: str) -> dict[str, str]:
     aliases: dict[str, str] = {}
     s = code or ""
     for project in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
-        for a in re.findall(rf"^\\s*import\\s+{project}\\s+as\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*$", s, flags=re.M):
+        for a in re.findall(rf"^\s*import\s+{project}\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$", s, flags=re.M):
             aliases[a] = project
         for a in re.findall(
-            rf"^\\s*from\\s+{project}\\s+import\\s+.+?\\s+as\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+            rf"^\s*from\s+{project}\s+import\s+.+?\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$",
             s,
             flags=re.M,
         ):
@@ -460,7 +474,7 @@ def _extract_import_aliases_from_python(code: str) -> dict[str, str]:
 
 def _extract_dotted_symbols_from_text(text: str) -> set[str]:
     # Keep it conservative: dotted paths only.
-    return set(re.findall(r"\\b[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+\\b", text or ""))
+    return set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", text or ""))
 
 
 def _resolve_alias_symbol(sym: str, aliases: dict[str, str]) -> str:
@@ -470,9 +484,16 @@ def _resolve_alias_symbol(sym: str, aliases: dict[str, str]) -> str:
     return sym
 
 
-def _extract_symbols_from_python_snippet(code: str) -> dict[str, set[str]]:
-    """Best-effort MolSysSuite symbol extraction from a Python snippet."""
+def _extract_symbols_from_python_snippet(code: str, *, extra_aliases: dict[str, str] | None = None) -> dict[str, set[str]]:
+    """Best-effort MolSysSuite symbol extraction from a Python snippet.
+
+    This is intentionally conservative and avoids imports/execution.
+    `extra_aliases` can provide notebook-level alias mappings so later cells
+    can be attributed correctly (e.g. `msmt` -> `molsysmt`).
+    """
     aliases = _extract_import_aliases_from_python(code)
+    if extra_aliases:
+        aliases = {**extra_aliases, **aliases}
     out: dict[str, set[str]] = {p: set() for p in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt")}
     for sym in _extract_dotted_symbols_from_text(code):
         resolved = _resolve_alias_symbol(sym, aliases)
@@ -504,6 +525,187 @@ def _extract_symbols_from_python_snippet(code: str) -> dict[str, set[str]]:
     return {k: v for k, v in out.items() if v}
 
 
+def _python_defs_and_uses(code: str) -> tuple[set[str], set[str]]:
+    """Return (defined_names, used_names) for a Python snippet (AST; no imports/execution).
+
+    This is used to stitch notebook sections by pulling a small "preamble" of
+    earlier cells when later code cells depend on earlier definitions.
+
+    We track:
+    - simple names (`x`)
+    - attribute chains (`obj.attr`, `obj.attr.subattr`)
+    - simple subscripts with constant keys (`d['key']`, `arr[0]`)
+    """
+    try:
+        mod = ast.parse(code or "")
+    except SyntaxError:
+        return set(), set()
+
+    defined: set[str] = set()
+    used: set[str] = set()
+
+    def attr_chain(node: ast.AST) -> str | None:
+        # Build "a.b.c" if it's a simple Attribute chain rooted in a Name.
+        parts: list[str] = []
+        cur: ast.AST | None = node
+        while isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+        if isinstance(cur, ast.Name):
+            parts.append(cur.id)
+            return ".".join(reversed(parts))
+        return None
+
+    def subscript_key(node: ast.Subscript) -> str | None:
+        # Best-effort: d['key'] / d[0]
+        base = attr_chain(node.value) if isinstance(node.value, ast.Attribute) else (node.value.id if isinstance(node.value, ast.Name) else None)
+        if not base:
+            return None
+        sl = node.slice
+        # Python 3.9+: slice is an expression.
+        if isinstance(sl, ast.Constant) and isinstance(sl.value, (str, int)):
+            val = sl.value
+            if isinstance(val, str):
+                return f"{base}['{val}']"
+            return f"{base}[{val}]"
+        return None
+
+    def add_target(t: ast.AST) -> None:
+        # Assignment targets.
+        if isinstance(t, ast.Name):
+            defined.add(t.id)
+            return
+        if isinstance(t, ast.Attribute):
+            chain = attr_chain(t)
+            if chain:
+                defined.add(chain)
+            # Also treat the base object as "used" (e.g. `obj.attr = ...` depends on `obj` existing).
+            base = attr_chain(t.value) if isinstance(t.value, ast.Attribute) else (t.value.id if isinstance(t.value, ast.Name) else None)
+            if base:
+                used.add(base)
+            return
+        if isinstance(t, ast.Subscript):
+            key = subscript_key(t)
+            if key:
+                defined.add(key)
+            # Add base object as used.
+            base = attr_chain(t.value) if isinstance(t.value, ast.Attribute) else (t.value.id if isinstance(t.value, ast.Name) else None)
+            if base:
+                used.add(base)
+            return
+        if isinstance(t, (ast.Tuple, ast.List)):
+            for elt in t.elts:
+                add_target(elt)
+            return
+
+    for node in ast.walk(mod):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if getattr(node, "name", None):
+                defined.add(str(node.name))
+        elif isinstance(node, ast.Import):
+            for a in node.names or []:
+                if not isinstance(a, ast.alias) or not a.name:
+                    continue
+                defined.add(a.asname or a.name.split(".", 1)[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names or []:
+                if not isinstance(a, ast.alias) or not a.name or a.name == "*":
+                    continue
+                defined.add(a.asname or a.name)
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                add_target(t)
+        elif isinstance(node, ast.AnnAssign):
+            add_target(node.target)
+        elif isinstance(node, ast.AugAssign):
+            add_target(node.target)
+        elif isinstance(node, ast.Name):
+            if isinstance(node.ctx, ast.Store):
+                defined.add(node.id)
+            elif isinstance(node.ctx, ast.Load):
+                used.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            if isinstance(node.ctx, ast.Load):
+                chain = attr_chain(node)
+                if chain:
+                    used.add(chain)
+        elif isinstance(node, ast.Subscript):
+            if isinstance(node.ctx, ast.Load):
+                key = subscript_key(node)
+                if key:
+                    used.add(key)
+
+    return defined, used
+
+
+def _builtin_names() -> set[str]:
+    b = __builtins__
+    if isinstance(b, dict):
+        return set(str(k) for k in b.keys())
+    return set(dir(b))
+
+
+_BUILTINS = _builtin_names() | {"True", "False", "None"}
+
+
+def _normalize_molsysmt_alias(code: str) -> str:
+    """Normalize legacy MolSysMT alias usage to the canonical `msm`.
+
+    Some historical notebooks use `import molsysmt as msmt` and then call `msmt.*`.
+    This alias is easy for LLMs to over-generalize into hallucinated `msmt` modules.
+
+    We do NOT rewrite the literal docs snapshot; we only normalize derived recipe snippets
+    to encourage consistent, modern examples.
+    """
+
+    s = code or ""
+    # Normalize the import alias itself.
+    s = re.sub(r"(^\s*import\s+molsysmt\s+as\s+)msmt(\s*$)", r"\1msm\2", s, flags=re.M)
+    # Normalize attribute access (best-effort). Keep it conservative: `msmt.` as a token.
+    s = re.sub(r"\bmsmt\.", "msm.", s)
+    return s
+
+
+def _split_markdown_into_heading_segments(text: str) -> list[tuple[str | None, str]]:
+    """Split Markdown into segments keyed by the most recent heading line.
+
+    Returns list of (heading_line_or_None, segment_text). A segment beginning with a heading
+    includes that heading line in its text. MyST label lines like `(Label)=` are attached to
+    the next heading segment when present.
+    """
+    lines = (text or "").splitlines()
+    out: list[tuple[str | None, str]] = []
+    pending_label_lines: list[str] = []
+    current_heading: str | None = None
+    buf: list[str] = []
+
+    def flush() -> None:
+        nonlocal buf
+        seg = "\n".join(buf).strip()
+        buf = []
+        if seg:
+            out.append((current_heading, seg))
+
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("(") and s.endswith(")=") and len(s) >= 4:
+            pending_label_lines.append(ln)
+            continue
+        if s.startswith("#"):
+            flush()
+            # Start a new segment for this heading.
+            current_heading = s
+            if pending_label_lines:
+                buf.extend(pending_label_lines)
+                pending_label_lines = []
+            buf.append(ln)
+            continue
+        buf.append(ln)
+
+    flush()
+    return out
+
+
 def _write_recipes_snapshot_from_ipynb(
     *,
     spec: SourceSpec,
@@ -518,11 +720,17 @@ def _write_recipes_snapshot_from_ipynb(
     if not root.exists():
         return {"ok": False, "error": "Project snapshot not found."}
 
-    out_root = root / "recipes" / "notebooks"
-    out_root.mkdir(parents=True, exist_ok=True)
+    out_cells_root = root / "recipes" / "notebooks"
+    out_sections_root = root / "recipes" / "notebooks_sections"
+    out_tutorials_root = root / "recipes" / "notebooks_tutorials"
+    out_cells_root.mkdir(parents=True, exist_ok=True)
+    out_sections_root.mkdir(parents=True, exist_ok=True)
+    out_tutorials_root.mkdir(parents=True, exist_ok=True)
 
     notebooks = sorted(root.rglob("*.ipynb"))
-    written = 0
+    written_cells = 0
+    written_sections = 0
+    written_tutorials = 0
     for nb_path in notebooks:
         try:
             nb = json.loads(nb_path.read_text(encoding="utf-8"))
@@ -532,9 +740,25 @@ def _write_recipes_snapshot_from_ipynb(
         if not isinstance(cells, list) or not cells:
             continue
 
+        def first_heading(md: str) -> str:
+            for ln in (md or "").splitlines():
+                s = ln.strip()
+                if s.startswith("#"):
+                    return s
+            return ""
+
+        def cell_tags(cell: dict[str, object]) -> set[str]:
+            meta = cell.get("metadata")
+            if isinstance(meta, dict):
+                tags = meta.get("tags")
+                if isinstance(tags, list):
+                    return {t for t in tags if isinstance(t, str) and t}
+            return set()
+
         # Collect markdown context per cell (previous markdown cell).
         md_by_idx: dict[int, str] = {}
         last_md = ""
+        current_heading = ""
         for i, cell in enumerate(cells):
             if not isinstance(cell, dict):
                 continue
@@ -545,38 +769,231 @@ def _write_recipes_snapshot_from_ipynb(
             txt = (txt or "").strip()
             if txt:
                 last_md = txt
+                hd = first_heading(txt)
+                if hd:
+                    current_heading = hd
             md_by_idx[i] = last_md
+
+        # Notebook-level state:
+        # - Once we see an import from the project, we keep later code cells as candidates.
+        # - Track import aliases across cells so later cells can resolve e.g. `msmt.*`.
+        seen_projects: set[str] = set()
+        notebook_aliases: dict[str, str] = {}
+        project = spec.name
+
+        # Section-level recipe blocks: group multiple code cells under the same markdown heading.
+        blocks: list[dict[str, object]] = []
+        block_heading = ""
+        block_md_parts: list[str] = []
+        block_cells: list[tuple[int, str]] = []
+        bootstrap_lines: list[str] = []
+        # Setup cells: a few early cells before the first "real" section (## ...).
+        # These cells may not define variables needed later, but can still be
+        # important for runnable snippets (e.g. configuration/display calls).
+        setup_cell_indices: list[int] = []
+        setup_phase = True
+        cell_info: dict[int, dict[str, object]] = {}
+
+        def flush_block() -> None:
+            nonlocal block_heading, block_md_parts, block_cells, written_sections
+            if not block_cells:
+                return
+            rel_nb = nb_path.relative_to(root)
+            block_id = len(blocks)
+
+            # Determine a stitched preamble: import lines + earlier definitions needed by this section.
+            block_idxs = [i for i, _ in block_cells]
+            block_start = min(block_idxs)
+            # Compute "needed before defined" names in execution order, so we stitch variables
+            # that are used at the start of the section even if they are reassigned later.
+            needed: set[str] = set()
+            defined_so_far: set[str] = set()
+            for ci, _ in block_cells:
+                info = cell_info.get(ci) or {}
+                used = set(info.get("used") or set())
+                defined = set(info.get("defined") or set())
+                needed |= (used - defined_so_far) - _BUILTINS
+                defined_so_far |= defined
+
+            selected_preamble: list[int] = []
+            selected_set: set[int] = set()
+            rounds = 0
+            max_preamble_cells = 6
+            while needed and rounds < 3 and len(selected_set) < max_preamble_cells:
+                rounds += 1
+                changed = False
+                for pi in sorted(cell_info.keys(), reverse=True):
+                    if pi >= block_start or pi in selected_set:
+                        continue
+                    info = cell_info.get(pi) or {}
+                    defs = set(info.get("defined") or set())
+                    uses = set(info.get("used") or set())
+                    if defs & needed:
+                        selected_set.add(pi)
+                        selected_preamble.append(pi)
+                        # Remove what we satisfied, and add transitive dependencies.
+                        needed -= defs
+                        needed |= (uses - defs) - _BUILTINS
+                        changed = True
+                    if len(selected_set) >= max_preamble_cells:
+                        break
+                if not changed:
+                    break
+            selected_preamble = sorted(selected_set)
+
+            # Build combined code with lightweight cell separators.
+            code_parts: list[str] = []
+
+            def import_lines_in(snippet: str) -> set[str]:
+                out: set[str] = set()
+                for ln in (snippet or "").splitlines():
+                    if re.match(r"^\s*(?:from|import)\s+", ln):
+                        s = ln.strip()
+                        if s:
+                            out.add(s)
+                return out
+
+            present_import_lines: set[str] = set()
+            for pi in selected_preamble:
+                present_import_lines |= import_lines_in(str((cell_info.get(pi) or {}).get("raw") or ""))
+            for _, ccode in block_cells:
+                present_import_lines |= import_lines_in(ccode)
+
+            if bootstrap_lines:
+                filtered = [ln for ln in bootstrap_lines if (ln or "").strip() and (ln or "").strip() not in present_import_lines]
+                if filtered:
+                    code_parts.append("\n".join(filtered).strip())
+            # Include a small number of early "setup" cells (before the first real section).
+            # These can capture important context even when no variables are defined.
+            setup_limit = 2
+            setup_selected = [i for i in setup_cell_indices if i < block_start and i not in selected_set][:setup_limit]
+            if setup_selected:
+                for pi in setup_selected:
+                    pcode = str((cell_info.get(pi) or {}).get("raw") or "").strip()
+                    if pcode:
+                        code_parts.append(f"# --- notebook setup cell {pi} ---\n{pcode}")
+            if selected_preamble:
+                for pi in selected_preamble:
+                    pcode = str((cell_info.get(pi) or {}).get("raw") or "").strip()
+                    if pcode:
+                        code_parts.append(f"# --- notebook preamble cell {pi} ---\n{pcode}")
+            for ci, ccode in block_cells:
+                ccode = ccode.strip()
+                if not ccode:
+                    continue
+                code_parts.append(f"# --- notebook cell {ci} ---\n{ccode}")
+            combined = "\n\n".join(p for p in code_parts if p.strip()).strip()
+            if not combined:
+                block_cells = []
+                return
+            if max_code_chars > 0 and len(combined) > max_code_chars:
+                combined = combined[: max(0, max_code_chars - 1)].rstrip() + "…"
+
+            # Aggregate symbols across the combined code.
+            symbols_by_project = _extract_symbols_from_python_snippet(combined, extra_aliases=notebook_aliases)
+            symbols = sorted(symbols_by_project.get(project) or [])
+
+            heading = (block_heading or "").strip() or "(no heading)"
+            md_ctx = "\n\n".join([p.strip() for p in block_md_parts if p.strip()]).strip()
+            if max_markdown_chars > 0 and len(md_ctx) > max_markdown_chars:
+                md_ctx = md_ctx[: max(0, max_markdown_chars - 1)].rstrip() + "…"
+
+            out_path = out_sections_root / rel_nb.with_suffix("") / f"section_{block_id:04d}.md"
+            _ensure_parent(out_path)
+            tutorial_hint = (out_tutorials_root / rel_nb.with_suffix("") / "tutorial.md").relative_to(root)
+            header = (
+                "# Recipe (notebook section)\n\n"
+                f"Project: {project}\n"
+                f"Notebook: {spec.name}/{rel_nb}\n"
+                f"Tutorial: {spec.name}/{tutorial_hint.as_posix()}\n"
+                f"Section: {heading}\n"
+                f"Cells: {', '.join(str(i) for i, _ in block_cells)}\n"
+                + (f"Setup cells: {', '.join(str(i) for i in setup_selected)}\n" if setup_selected else "")
+                + (f"Preamble cells: {', '.join(str(i) for i in selected_preamble)}\n" if selected_preamble else "")
+                + (f"Symbols: {', '.join(symbols)}\n" if symbols else "")
+                + "\n"
+            )
+            body = ""
+            if md_ctx:
+                body += "## Context (from notebook)\n\n" + md_ctx + "\n\n"
+            body += "## Code\n\n```python\n" + combined + "\n```\n"
+            data = (header + body).encode("utf-8")
+            out_path.write_bytes(data[:max_bytes] if max_bytes > 0 and len(data) > max_bytes else data)
+            written_sections += 1
+            blocks.append({"heading": heading, "cells": [i for i, _ in block_cells]})
+            block_cells = []
+            block_heading = ""
+            block_md_parts = []
 
         for i, cell in enumerate(cells):
             if not isinstance(cell, dict):
                 continue
+            if cell.get("cell_type") == "markdown":
+                # If this markdown cell starts a new section, close the previous block.
+                src = cell.get("source")
+                txt = "".join(src) if isinstance(src, list) else (src if isinstance(src, str) else "")
+                txt = (txt or "").strip()
+                if txt:
+                    for hd, seg in _split_markdown_into_heading_segments(txt):
+                        seg = (seg or "").strip()
+                        if not seg:
+                            continue
+                        if hd:
+                            current_heading = hd
+                            if hd.startswith("##"):
+                                setup_phase = False
+                            if block_cells:
+                                flush_block()
+                            block_heading = hd
+                        block_md_parts.append(seg)
+                continue
             if cell.get("cell_type") != "code":
+                continue
+            if cell_tags(cell).intersection({"remove-input", "remove-cell"}):
                 continue
             src = cell.get("source")
             code = "".join(src) if isinstance(src, list) else (src if isinstance(src, str) else "")
             code = (code or "").strip()
             if not code:
                 continue
+            if project == "molsysmt":
+                code = _normalize_molsysmt_alias(code)
 
-            projects = _projects_mentioned_in_python(code)
-            symbols_by_project = _extract_symbols_from_python_snippet(code)
-            # If there are no project hints at all, skip (avoid indexing generic python cells).
-            if not projects and not symbols_by_project:
+            # Update notebook-level context before deciding to include this cell.
+            seen_projects.update(_projects_mentioned_in_python(code))
+            notebook_aliases.update(_extract_import_aliases_from_python(code))
+
+            symbols_by_project = _extract_symbols_from_python_snippet(code, extra_aliases=notebook_aliases)
+
+            # Track definitions/uses for *all* visible code cells so section stitching can
+            # pull earlier variable definitions even when a cell does not mention MolSysSuite.
+            defined, used = _python_defs_and_uses(code)
+            cell_info[i] = {"raw": code, "defined": defined, "used": used}
+            if setup_phase and len(setup_cell_indices) < 5:
+                setup_cell_indices.append(i)
+
+            # If we haven't seen any import for this project in the notebook yet, and this cell
+            # doesn't mention the project explicitly, skip (avoid indexing generic boilerplate).
+            if project not in seen_projects and project not in symbols_by_project:
                 continue
-            # Keep recipes under the current project snapshot only (avoid cross-project mixing).
-            project = spec.name
-            if project not in projects and project not in symbols_by_project:
-                continue
+
+            # Update bootstrap import lines (helps later sections compile standalone).
+            for ln in code.splitlines():
+                if re.match(rf"^\s*(?:from|import)\s+{re.escape(project)}\b", ln):
+                    s = ln.strip()
+                    if s and s not in bootstrap_lines:
+                        bootstrap_lines.append(s)
 
             md_ctx = (md_by_idx.get(i) or "").strip()
             if max_markdown_chars > 0 and len(md_ctx) > max_markdown_chars:
                 md_ctx = md_ctx[: max(0, max_markdown_chars - 1)].rstrip() + "…"
-            if max_code_chars > 0 and len(code) > max_code_chars:
-                code = code[: max(0, max_code_chars - 1)].rstrip() + "…"
+            code_out = code
+            if max_code_chars > 0 and len(code_out) > max_code_chars:
+                code_out = code_out[: max(0, max_code_chars - 1)].rstrip() + "…"
 
             symbols = sorted(symbols_by_project.get(project) or [])
             rel_nb = nb_path.relative_to(root)
-            out_path = out_root / rel_nb.with_suffix("") / f"cell_{i:04d}.md"
+            out_path = out_cells_root / rel_nb.with_suffix("") / f"cell_{i:04d}.md"
             _ensure_parent(out_path)
             header = (
                 f"# Recipe (notebook)\n\n"
@@ -588,12 +1005,121 @@ def _write_recipes_snapshot_from_ipynb(
             body = ""
             if md_ctx:
                 body += "## Context (from notebook)\n\n" + md_ctx + "\n\n"
-            body += "## Code\n\n```python\n" + code + "\n```\n"
+            body += "## Code\n\n```python\n" + code_out + "\n```\n"
             data = (header + body).encode("utf-8")
             out_path.write_bytes(data[:max_bytes] if len(data) > max_bytes else data)
-            written += 1
+            written_cells += 1
 
-    return {"ok": True, "notebooks_seen": int(len(notebooks)), "recipes_written": int(written), "recipes_dir": str(out_root)}
+            # Add to current section block.
+            if not block_heading:
+                # Try to use the closest remembered heading.
+                block_heading = current_heading
+            block_cells.append((i, code))
+
+        # Flush last block for this notebook.
+        flush_block()
+
+        # Tutorial-level recipe: overview + outline + minimal setup snippet.
+        rel_nb = nb_path.relative_to(root)
+        title = ""
+        for cell in cells:
+            if not isinstance(cell, dict) or cell.get("cell_type") != "markdown":
+                continue
+            src = cell.get("source")
+            txt = "".join(src) if isinstance(src, list) else (src if isinstance(src, str) else "")
+            hd = first_heading((txt or "").strip())
+            if hd:
+                title = hd
+                break
+        if not title:
+            title = f"# {rel_nb.stem}"
+
+        # Intro: take the first markdown cell under the title (if any).
+        intro = ""
+        for cell in cells:
+            if not isinstance(cell, dict) or cell.get("cell_type") != "markdown":
+                continue
+            src = cell.get("source")
+            txt = "".join(src) if isinstance(src, list) else (src if isinstance(src, str) else "")
+            txt = (txt or "").strip()
+            if not txt:
+                continue
+            if first_heading(txt) == title:
+                # Keep only the text after the title heading line (skip optional MyST labels).
+                lines = txt.splitlines()
+                cut = 0
+                for j, ln in enumerate(lines):
+                    if ln.strip() == title:
+                        cut = j + 1
+                        break
+                intro = "\n".join(lines[cut:]).strip()
+                break
+        if max_markdown_chars > 0 and len(intro) > max_markdown_chars:
+            intro = intro[: max(0, max_markdown_chars - 1)].rstrip() + "…"
+
+        # Setup: include project imports and the first non-import code cell that references the project.
+        setup_parts: list[str] = []
+        import_cell_raw = ""
+        # Prefer the first *visible* import cell that imports the project, because it typically
+        # also contains third-party imports (e.g. numpy) needed for later setup cells.
+        for ci in sorted(cell_info.keys()):
+            raw = str((cell_info.get(ci) or {}).get("raw") or "")
+            if any(re.match(rf"^\s*(?:from|import)\s+{re.escape(project)}\b", ln) for ln in raw.splitlines()):
+                import_cell_raw = raw.strip()
+                break
+        if import_cell_raw:
+            setup_parts.append(import_cell_raw)
+        elif bootstrap_lines:
+            setup_parts.append("\n".join(bootstrap_lines).strip())
+        entry_cell_code = ""
+        for ci in sorted(cell_info.keys()):
+            raw = str((cell_info.get(ci) or {}).get("raw") or "")
+            if not raw.strip():
+                continue
+            # Skip pure import cells.
+            if all(re.match(r"^\s*(?:from|import)\s+", ln) or not ln.strip() for ln in raw.splitlines()):
+                continue
+            symbols_by_project = _extract_symbols_from_python_snippet(raw, extra_aliases=notebook_aliases)
+            if project in symbols_by_project:
+                entry_cell_code = raw.strip()
+                break
+        if entry_cell_code:
+            if not import_cell_raw or entry_cell_code != import_cell_raw:
+                setup_parts.append(entry_cell_code)
+        setup_code = "\n\n".join(p for p in setup_parts if p.strip()).strip()
+        if max_code_chars > 0 and len(setup_code) > max_code_chars:
+            setup_code = setup_code[: max(0, max_code_chars - 1)].rstrip() + "…"
+
+        outline = "\n".join(f"- {b.get('heading')}" for b in blocks if str(b.get("heading") or "").strip())
+
+        out_path = out_tutorials_root / rel_nb.with_suffix("") / "tutorial.md"
+        _ensure_parent(out_path)
+        header = (
+            "# Tutorial (notebook)\n\n"
+            f"Project: {project}\n"
+            f"Notebook: {spec.name}/{rel_nb}\n"
+            f"Title: {title}\n\n"
+        )
+        body = ""
+        if intro:
+            body += "## Overview\n\n" + intro.strip() + "\n\n"
+        if outline.strip():
+            body += "## Outline\n\n" + outline.strip() + "\n\n"
+        if setup_code.strip():
+            body += "## Setup (bootstrap)\n\n```python\n" + setup_code.strip() + "\n```\n\n"
+        out_path.write_bytes((header + body).encode("utf-8")[:max_bytes])
+        written_tutorials += 1
+
+    return {
+        "ok": True,
+        "notebooks_seen": int(len(notebooks)),
+        "recipes_written_cells": int(written_cells),
+        "recipes_written_sections": int(written_sections),
+        "recipes_written_tutorials": int(written_tutorials),
+        "recipes_dir_cells": str(out_cells_root),
+        "recipes_dir_sections": str(out_sections_root),
+        "recipes_dir_tutorials": str(out_tutorials_root),
+    }
 
 
 def _write_recipes_snapshot_from_tests(
@@ -709,6 +1235,318 @@ def _write_recipes_snapshot_from_tests(
         "recipes_written": int(recipes_written),
         "recipes_dir": str(out_root),
         "include_private": bool(include_private),
+    }
+
+
+def _extract_fenced_code_blocks(text: str) -> list[tuple[str, str]]:
+    """Return a list of (language, code) fenced blocks from Markdown-like text."""
+    lines = (text or "").splitlines()
+    blocks: list[tuple[str, str]] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i].rstrip("\n")
+        s = ln.strip()
+        if not s.startswith("```"):
+            i += 1
+            continue
+        lang = s[3:].strip().lower()
+        i += 1
+        buf: list[str] = []
+        while i < len(lines):
+            end = lines[i].strip()
+            if end.startswith("```"):
+                break
+            buf.append(lines[i].rstrip("\n"))
+            i += 1
+        # Skip closing fence line if present.
+        if i < len(lines) and lines[i].strip().startswith("```"):
+            i += 1
+        code = "\n".join(buf).rstrip()
+        if code.strip():
+            blocks.append((lang, code))
+    return blocks
+
+
+def _extract_python_examples_from_docstring(doc: str) -> list[str]:
+    """Extract Python examples from a docstring (best-effort, stdlib-only).
+
+    Supported patterns:
+    - doctest prompts (>>> / ...),
+    - fenced code blocks (```python ...```).
+    """
+    d = _normalize_docstring(doc or "")
+    if not d:
+        return []
+
+    examples: list[str] = []
+
+    # 1) Fenced blocks inside docstrings (rare but possible).
+    for lang, code in _extract_fenced_code_blocks(d):
+        if lang in {"python", "py", ""}:
+            examples.append(code.strip())
+
+    # 2) Doctest prompts.
+    lines = d.splitlines()
+    buf: list[str] = []
+    in_block = False
+    for ln in lines:
+        s = ln.lstrip()
+        if s.startswith(">>>"):
+            in_block = True
+            buf.append(s[4:] if s.startswith(">>> ") else s[3:].lstrip())
+            continue
+        if in_block and s.startswith("..."):
+            buf.append(s[4:] if s.startswith("... ") else s[3:].lstrip())
+            continue
+        if in_block:
+            # Stop at the first non-prompt line (likely output or a new section).
+            if buf:
+                code = "\n".join(buf).strip()
+                if code:
+                    examples.append(code)
+            buf = []
+            in_block = False
+    if in_block and buf:
+        code = "\n".join(buf).strip()
+        if code:
+            examples.append(code)
+
+    # De-dup while preserving order.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for e in examples:
+        e2 = e.strip()
+        if not e2 or e2 in seen:
+            continue
+        seen.add(e2)
+        uniq.append(e2)
+    return uniq
+
+
+def _write_recipes_snapshot_from_docstrings(
+    *,
+    spec: SourceSpec,
+    repo_root: Path,
+    dest: Path,
+    max_bytes: int,
+    include_private: bool,
+) -> dict[str, object]:
+    """Generate 'recipe' docs from docstring examples (AST; no imports)."""
+
+    pkg = _find_primary_python_package(repo_root, spec.name)
+    if pkg is None:
+        return {"ok": False, "error": "No Python package directory found."}
+
+    out_root = dest / spec.name / "recipes" / "docstrings"
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    modules: list[Path] = []
+    for p in pkg.rglob("*.py"):
+        if _should_skip_dir(p, DEFAULT_EXCLUDE_DIR_NAMES):
+            continue
+        if not include_private and p.name.startswith("_") and p.name != "__init__.py":
+            continue
+        try:
+            if max_bytes > 0 and p.stat().st_size > max_bytes:
+                continue
+        except OSError:
+            continue
+        modules.append(p)
+    modules.sort()
+
+    written = 0
+    modules_seen = 0
+    symbols_seen = 0
+
+    for m in modules:
+        text = _safe_read_text(m)
+        if not text:
+            continue
+        try:
+            mod = ast.parse(text)
+        except SyntaxError:
+            continue
+        modules_seen += 1
+
+        rel = m.resolve().relative_to(pkg.resolve())
+        module_qual = _module_qual(pkg.name, rel.with_suffix(""))
+        module_dir = _module_rel_dir(rel)
+
+        for node in mod.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols_seen += 1
+                sym_name = node.name
+                sym_qual = f"{module_qual}.{sym_name}"
+                doc = ast.get_docstring(node) or ""
+                examples = _extract_python_examples_from_docstring(doc)
+                if not examples:
+                    continue
+                l1, l2 = _ast_node_span(node)
+                out_path = out_root / module_dir / f"{sym_name}.md"
+                _ensure_parent(out_path)
+                header = (
+                    "# Recipe (docstring examples)\n\n"
+                    f"Project: {spec.name}\n"
+                    f"Symbol: {sym_qual}\n"
+                    f"Module: {module_qual}\n"
+                    f"Source: {m}:{l1}-{l2}\n"
+                    f"Symbols: {sym_qual}\n\n"
+                )
+                body_parts: list[str] = []
+                for j, code in enumerate(examples, start=1):
+                    code = _normalize_molsysmt_alias(code) if spec.name == "molsysmt" else code
+                    body_parts.append(f"## Example {j}\n\n```python\n{code.strip()}\n```")
+                data = (header + "\n\n".join(body_parts).strip() + "\n").encode("utf-8")
+                out_path.write_bytes(data[:max_bytes] if max_bytes > 0 and len(data) > max_bytes else data)
+                written += 1
+            elif isinstance(node, ast.ClassDef):
+                class_name = node.name
+                class_qual = f"{module_qual}.{class_name}"
+                # Class docstring examples.
+                symbols_seen += 1
+                cdoc = ast.get_docstring(node) or ""
+                cexamples = _extract_python_examples_from_docstring(cdoc)
+                if cexamples:
+                    l1, l2 = _ast_node_span(node)
+                    out_path = out_root / module_dir / f"{class_name}.md"
+                    _ensure_parent(out_path)
+                    header = (
+                        "# Recipe (docstring examples)\n\n"
+                        f"Project: {spec.name}\n"
+                        f"Symbol: {class_qual}\n"
+                        f"Module: {module_qual}\n"
+                        f"Source: {m}:{l1}-{l2}\n"
+                        f"Symbols: {class_qual}\n\n"
+                    )
+                    parts: list[str] = []
+                    for j, code in enumerate(cexamples, start=1):
+                        code = _normalize_molsysmt_alias(code) if spec.name == "molsysmt" else code
+                        parts.append(f"## Example {j}\n\n```python\n{code.strip()}\n```")
+                    data = (header + "\n\n".join(parts).strip() + "\n").encode("utf-8")
+                    out_path.write_bytes(data[:max_bytes] if max_bytes > 0 and len(data) > max_bytes else data)
+                    written += 1
+
+                # Method docstring examples.
+                for mnode in node.body:
+                    if not isinstance(mnode, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        continue
+                    symbols_seen += 1
+                    meth_name = mnode.name
+                    meth_qual = f"{class_qual}.{meth_name}"
+                    mdoc = ast.get_docstring(mnode) or ""
+                    mexamples = _extract_python_examples_from_docstring(mdoc)
+                    if not mexamples:
+                        continue
+                    ml1, ml2 = _ast_node_span(mnode)
+                    out_path = out_root / module_dir / class_name / f"{meth_name}.md"
+                    _ensure_parent(out_path)
+                    header = (
+                        "# Recipe (docstring examples)\n\n"
+                        f"Project: {spec.name}\n"
+                        f"Symbol: {meth_qual}\n"
+                        f"Module: {module_qual}\n"
+                        f"Source: {m}:{ml1}-{ml2}\n"
+                        f"Symbols: {meth_qual}\n\n"
+                    )
+                    parts: list[str] = []
+                    for j, code in enumerate(mexamples, start=1):
+                        code = _normalize_molsysmt_alias(code) if spec.name == "molsysmt" else code
+                        parts.append(f"## Example {j}\n\n```python\n{code.strip()}\n```")
+                    data = (header + "\n\n".join(parts).strip() + "\n").encode("utf-8")
+                    out_path.write_bytes(data[:max_bytes] if max_bytes > 0 and len(data) > max_bytes else data)
+                    written += 1
+
+    return {
+        "ok": True,
+        "modules_seen": int(modules_seen),
+        "symbols_seen": int(symbols_seen),
+        "recipes_written": int(written),
+        "recipes_dir": str(out_root),
+        "include_private": bool(include_private),
+    }
+
+
+def _write_recipes_snapshot_from_markdown_snippets(
+    *,
+    spec: SourceSpec,
+    dest: Path,
+    max_bytes: int,
+    max_blocks_per_file: int,
+) -> dict[str, object]:
+    """Generate 'recipe' docs from fenced code blocks in Markdown sources (snapshot)."""
+
+    root = dest / spec.name
+    if not root.exists():
+        return {"ok": False, "error": "Project snapshot not found."}
+
+    out_root = root / "recipes" / "markdown_snippets"
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    md_files = sorted(root.rglob("*.md"))
+    written = 0
+    files_seen = 0
+    blocks_seen = 0
+
+    def is_generated(p: Path) -> bool:
+        rel = p.relative_to(root).as_posix()
+        return any(
+            f"/{part}/" in f"/{rel}/"
+            for part in ("recipes", "recipe_cards", "symbol_cards", "api_surface")
+        )
+
+    for md in md_files:
+        if is_generated(md):
+            continue
+        text = _safe_read_text(md)
+        if not text:
+            continue
+        files_seen += 1
+        rel_md = md.relative_to(root)
+
+        segments = _split_markdown_into_heading_segments(text)
+        seg_idx = 0
+        kept_in_file = 0
+        for heading, seg in segments:
+            seg_idx += 1
+            for block_idx, (lang, code) in enumerate(_extract_fenced_code_blocks(seg), start=1):
+                blocks_seen += 1
+                if max_blocks_per_file > 0 and kept_in_file >= max_blocks_per_file:
+                    continue
+                if lang not in {"python", "py", "bash", "sh", "shell", "console"}:
+                    continue
+                kept_in_file += 1
+                code2 = code
+                if spec.name == "molsysmt" and lang in {"python", "py", ""}:
+                    code2 = _normalize_molsysmt_alias(code2)
+
+                symbols = []
+                if lang in {"python", "py", ""}:
+                    syms = _extract_symbols_from_python_snippet(code2).get(spec.name) or set()
+                    symbols = sorted(syms)
+
+                out_path = out_root / rel_md.with_suffix("") / f"seg_{seg_idx:04d}_block_{block_idx:04d}.md"
+                _ensure_parent(out_path)
+                header = (
+                    "# Recipe (Markdown snippet)\n\n"
+                    f"Project: {spec.name}\n"
+                    f"Source: {spec.name}/{rel_md}\n"
+                    + (f"Section: {heading}\n" if heading else "")
+                    + (f"Language: {lang}\n" if lang else "")
+                    + (f"Symbols: {', '.join(symbols)}\n" if symbols else "")
+                    + "\n"
+                )
+                body = "## Code\n\n```" + (lang or "") + "\n" + code2.strip() + "\n```\n"
+                data = (header + body).encode("utf-8")
+                out_path.write_bytes(data[:max_bytes] if max_bytes > 0 and len(data) > max_bytes else data)
+                written += 1
+
+    return {
+        "ok": True,
+        "files_seen": int(files_seen),
+        "blocks_seen": int(blocks_seen),
+        "recipes_written": int(written),
+        "recipes_dir": str(out_root),
+        "max_blocks_per_file": int(max_blocks_per_file),
     }
 
 
@@ -1184,6 +2022,13 @@ def _write_ipynb_snapshot(
         if not isinstance(src_field, (list, str)):
             continue
         rec: dict[str, object] = {"cell_type": ctype, "source": src_field}
+        # Preserve minimal metadata needed for downstream extraction (e.g. tags like
+        # "remove-input"). Keep only `metadata.tags` to avoid size blow-ups.
+        meta = cell.get("metadata")
+        if isinstance(meta, dict):
+            tags = meta.get("tags")
+            if isinstance(tags, list) and tags:
+                rec["metadata"] = {"tags": [t for t in tags if isinstance(t, str) and t]}
         if not strip_outputs and ctype == "code":
             if "execution_count" in cell:
                 rec["execution_count"] = cell.get("execution_count")
@@ -1383,6 +2228,173 @@ def _parse_sources(args: argparse.Namespace) -> list[SourceSpec]:
     return [SourceSpec(name=k, path=v) for k, v in DEFAULT_SOURCES.items()]
 
 
+def _load_corpus_config(path: Path) -> dict[str, object]:
+    if not path.exists():
+        raise SystemExit(f"Corpus config not found: {path}")
+    suf = path.suffix.lower()
+    suffixes = [s.lower() for s in path.suffixes]
+    is_json = suf == ".json" or suffixes[-2:] == [".json", ".example"]
+    is_toml = suf in {".toml", ".tml"} or suffixes[-2:] in ([".toml", ".example"], [".tml", ".example"])
+
+    if is_json:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise SystemExit(f"Invalid JSON corpus config: {path}: {exc}") from exc
+    if is_toml:
+        if tomllib is None:
+            raise SystemExit("TOML corpus config requires Python 3.11+ (tomllib).")
+        try:
+            return tomllib.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise SystemExit(f"Invalid TOML corpus config: {path}: {exc}") from exc
+    raise SystemExit(f"Unsupported corpus config format: {path} (use .toml or .json)")
+
+
+def _parse_str_list(value: object, *, field: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        out: list[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    raise SystemExit(f"Invalid corpus config field {field!r}: expected a string list.")
+
+
+def _selection_defaults_from_config(cfg: dict[str, object]) -> SelectionSpec:
+    defaults = cfg.get("defaults") or {}
+    if not isinstance(defaults, dict):
+        defaults = {}
+
+    include_dirs = tuple(_parse_str_list(defaults.get("include_dirs"), field="defaults.include_dirs") or list(DEFAULT_INCLUDE_DIRS))
+    include_root_globs = tuple(
+        _parse_str_list(defaults.get("include_root_globs"), field="defaults.include_root_globs") or list(DEFAULT_INCLUDE_ROOT_GLOBS)
+    )
+    exts_raw = _parse_str_list(defaults.get("text_exts"), field="defaults.text_exts")
+    exts = set(exts_raw) if exts_raw else set(DEFAULT_TEXT_EXTS)
+    # Normalize extensions.
+    exts = {("." + e.lstrip(".")) for e in exts}
+
+    exclude_raw = _parse_str_list(defaults.get("exclude_dir_names"), field="defaults.exclude_dir_names")
+    exclude = set(exclude_raw) if exclude_raw else set(DEFAULT_EXCLUDE_DIR_NAMES)
+
+    return SelectionSpec(
+        include_dirs=include_dirs,
+        include_root_globs=include_root_globs,
+        exts=exts,
+        exclude_dir_names=exclude,
+        docs_base_url=None,
+    )
+
+
+def _sources_from_config(
+    cfg: dict[str, object],
+    *,
+    base: list[SourceSpec],
+) -> list[SourceSpec]:
+    sources_cfg = cfg.get("sources") or {}
+    if not isinstance(sources_cfg, dict):
+        return base
+
+    by_name: dict[str, SourceSpec] = {s.name: s for s in base}
+
+    for name, entry in sources_cfg.items():
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(entry, dict):
+            continue
+        enabled = entry.get("enabled")
+        if enabled is False:
+            by_name.pop(name, None)
+            continue
+        raw_path = entry.get("path")
+        if raw_path is None:
+            # No path override: keep existing SourceSpec (if present).
+            continue
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            raise SystemExit(f"Invalid corpus config sources.{name}.path: expected a non-empty string.")
+        by_name[name] = SourceSpec(name=name, path=Path(raw_path).expanduser())
+
+    # Keep deterministic order: prefer DEFAULT_SOURCES order, then any extras.
+    ordered: list[SourceSpec] = []
+    for k in DEFAULT_SOURCES.keys():
+        if k in by_name:
+            ordered.append(by_name.pop(k))
+    for k in sorted(by_name.keys()):
+        ordered.append(by_name[k])
+    return ordered
+
+
+def _selection_for_source(
+    *,
+    cfg: dict[str, object],
+    defaults: SelectionSpec,
+    name: str,
+    include_examples_cli: bool,
+) -> SelectionSpec:
+    sources_cfg = cfg.get("sources") or {}
+    entry = sources_cfg.get(name) if isinstance(sources_cfg, dict) else None
+    entry = entry if isinstance(entry, dict) else {}
+
+    include_dirs = list(defaults.include_dirs)
+    include_root_globs = list(defaults.include_root_globs)
+    exts = set(defaults.exts)
+    exclude = set(defaults.exclude_dir_names)
+    docs_base_url = DEFAULT_DOCS_BASE_URL.get(name)
+
+    # Per-source overrides.
+    if "include_dirs" in entry:
+        include_dirs = _parse_str_list(entry.get("include_dirs"), field=f"sources.{name}.include_dirs")
+    if "include_root_globs" in entry:
+        include_root_globs = _parse_str_list(entry.get("include_root_globs"), field=f"sources.{name}.include_root_globs")
+    if "text_exts" in entry:
+        raw = _parse_str_list(entry.get("text_exts"), field=f"sources.{name}.text_exts")
+        exts = {("." + e.lstrip(".")) for e in raw} if raw else set()
+    if "exclude_dir_names" in entry:
+        raw = _parse_str_list(entry.get("exclude_dir_names"), field=f"sources.{name}.exclude_dir_names")
+        exclude = set(raw)
+    if isinstance(entry.get("docs_base_url"), str) and str(entry.get("docs_base_url")).strip():
+        docs_base_url = str(entry.get("docs_base_url")).strip()
+
+    include_examples_cfg = bool(entry.get("include_examples") is True)
+    if include_examples_cli or include_examples_cfg:
+        if "examples" not in include_dirs:
+            include_dirs.append("examples")
+
+    # De-duplicate while preserving order.
+    uniq_dirs: list[str] = []
+    seen_dirs: set[str] = set()
+    for d in include_dirs:
+        if not isinstance(d, str) or not d.strip():
+            continue
+        if d in seen_dirs:
+            continue
+        seen_dirs.add(d)
+        uniq_dirs.append(d)
+
+    uniq_globs: list[str] = []
+    seen_globs: set[str] = set()
+    for g in include_root_globs:
+        if not isinstance(g, str) or not g.strip():
+            continue
+        if g in seen_globs:
+            continue
+        seen_globs.add(g)
+        uniq_globs.append(g)
+
+    return SelectionSpec(
+        include_dirs=tuple(uniq_dirs),
+        include_root_globs=tuple(uniq_globs),
+        exts=exts,
+        exclude_dir_names=exclude,
+        docs_base_url=docs_base_url,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sync MolSys-AI RAG corpus from sibling repos.")
     parser.add_argument(
@@ -1396,9 +2408,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Override sources (repeatable): name=/abs/or/rel/path",
     )
     parser.add_argument(
+        "--corpus-config",
+        default="",
+        help=(
+            "Optional corpus selection config (.toml or .json). "
+            "Use this to control, per project, which directories and files are snapshotted."
+        ),
+    )
+    parser.add_argument(
         "--build-index",
         action="store_true",
         help="Build the RAG index after syncing (requires RAG dependencies).",
+    )
+    parser.add_argument(
+        "--build-bm25",
+        action="store_true",
+        help="Also build a BM25 sidecar for each index (writes `<index>.bm25.pkl`).",
     )
     parser.add_argument(
         "--build-index-parallel",
@@ -1495,6 +2520,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional max number of tests to scan per project (default: 0 = no limit).",
     )
     parser.add_argument(
+        "--recipes-max-md-blocks",
+        type=int,
+        default=50,
+        help="Max fenced code blocks extracted per Markdown file (default: 50).",
+    )
+    parser.add_argument(
         "--api-surface-max-modules",
         type=int,
         default=0,
@@ -1558,6 +2589,11 @@ def main(argv: list[str] | None = None) -> int:
         help="If a notebook still exceeds --max-bytes-ipynb, keep only the first N cells (default: 0 = auto-fit by size).",
     )
     parser.add_argument(
+        "--include-examples",
+        action="store_true",
+        help="Also snapshot files under upstream `examples/` directories (default: off; these can be stale and may reinforce legacy APIs/aliases).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print what would be copied without writing files.",
@@ -1565,7 +2601,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     dest = Path(args.dest).expanduser()
-    sources = _parse_sources(args)
+    cfg_path = Path(str(args.corpus_config)).expanduser() if (args.corpus_config or "").strip() else None
+    cfg: dict[str, object] = _load_corpus_config(cfg_path) if cfg_path else {}
+    selection_defaults = _selection_defaults_from_config(cfg)
+
+    sources_base = _parse_sources(args)
+    sources = _sources_from_config(cfg, base=sources_base)
     max_bytes = int(args.max_bytes)
     max_bytes_ipynb = int(args.max_bytes_ipynb)
     include_large_text = str(args.include_large_text)
@@ -1574,6 +2615,15 @@ def main(argv: list[str] | None = None) -> int:
     index_path = Path(args.index).expanduser()
     index_dir = Path(args.index_dir).expanduser() if (args.index_dir or "").strip() else (REPO_ROOT / "server" / "chat_api" / "data" / "indexes")
     anchors_out = Path(args.anchors_out).expanduser()
+
+    selection_by_source: dict[str, SelectionSpec] = {}
+    for spec in sources:
+        selection_by_source[spec.name] = _selection_for_source(
+            cfg=cfg,
+            defaults=selection_defaults,
+            name=spec.name,
+            include_examples_cli=bool(args.include_examples),
+        )
 
     if args.clean and not args.dry_run:
         for spec in sources:
@@ -1584,6 +2634,14 @@ def main(argv: list[str] | None = None) -> int:
     manifest: dict[str, object] = {
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "dest": str(dest),
+        "corpus_config": str(cfg_path) if cfg_path else None,
+        "selection_defaults": {
+            "include_dirs": list(selection_defaults.include_dirs),
+            "include_root_globs": list(selection_defaults.include_root_globs),
+            "text_exts": sorted(selection_defaults.exts),
+            "exclude_dir_names": sorted(selection_defaults.exclude_dir_names),
+        },
+        "include_examples": bool(args.include_examples),
         "max_bytes": max_bytes,
         "max_bytes_ipynb": max_bytes_ipynb,
         "include_large_text": include_large_text,
@@ -1595,6 +2653,9 @@ def main(argv: list[str] | None = None) -> int:
     coverage_report: dict[str, object] = {
         "generated_at_utc": manifest["generated_at_utc"],
         "dest": str(dest),
+        "corpus_config": manifest["corpus_config"],
+        "selection_defaults": manifest["selection_defaults"],
+        "include_examples": bool(args.include_examples),
         "max_bytes": max_bytes,
         "max_bytes_ipynb": max_bytes_ipynb,
         "include_large_text": include_large_text,
@@ -1609,12 +2670,13 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit(f"Source repo not found: {spec.name} -> {src}")
 
             commit = _run_git_rev_parse(src)
+            sel = selection_by_source.get(spec.name) or selection_defaults
             files, selection_stats = _collect_source_files_with_stats(
                 src,
-                include_dirs=DEFAULT_INCLUDE_DIRS,
-                include_root_globs=DEFAULT_INCLUDE_ROOT_GLOBS,
-                exts=DEFAULT_TEXT_EXTS,
-                exclude_dir_names=DEFAULT_EXCLUDE_DIR_NAMES,
+                include_dirs=sel.include_dirs,
+                include_root_globs=sel.include_root_globs,
+                exts=sel.exts,
+                exclude_dir_names=sel.exclude_dir_names,
                 max_bytes=max_bytes,
                 max_bytes_ipynb=max_bytes_ipynb,
                 include_large_text=include_large_text,
@@ -1625,6 +2687,13 @@ def main(argv: list[str] | None = None) -> int:
                 "git_head": commit,
                 "selected_file_count": len(files),
                 "selection_stats": selection_stats,
+                "selection": {
+                    "include_dirs": list(sel.include_dirs),
+                    "include_root_globs": list(sel.include_root_globs),
+                    "text_exts": sorted(sel.exts),
+                    "exclude_dir_names": sorted(sel.exclude_dir_names),
+                    "docs_base_url": sel.docs_base_url,
+                },
                 "files": [],
                 "stats": {
                     "written": 0,
@@ -1782,10 +2851,11 @@ def main(argv: list[str] | None = None) -> int:
             "projects": {},
         }
         for spec in sources:
+            sel = selection_by_source.get(spec.name)
             info = _build_docs_anchor_map(
                 spec=spec,
                 dest_docs_dir=dest,
-                docs_base_url=DEFAULT_DOCS_BASE_URL.get(spec.name),
+                docs_base_url=(sel.docs_base_url if sel else DEFAULT_DOCS_BASE_URL.get(spec.name)),
                 max_bytes=max_bytes,
                 max_bytes_ipynb=max_bytes_ipynb,
             )
@@ -1799,7 +2869,7 @@ def main(argv: list[str] | None = None) -> int:
             entry = sources_map.get(spec.name)
             if isinstance(entry, dict):
                 entry["anchors_out"] = str(anchors_out)
-                entry["docs_base_url"] = DEFAULT_DOCS_BASE_URL.get(spec.name)
+                entry["docs_base_url"] = (sel.docs_base_url if sel else DEFAULT_DOCS_BASE_URL.get(spec.name))
 
         _write_json(anchors_out, anchor_map)
         print(f"Wrote anchors: {anchors_out}")
@@ -1915,6 +2985,19 @@ def main(argv: list[str] | None = None) -> int:
                 include_private=False,
                 max_tests=int(args.recipes_max_tests),
             )
+            per["docstrings"] = _write_recipes_snapshot_from_docstrings(
+                spec=spec,
+                repo_root=spec.path,
+                dest=dest,
+                max_bytes=max_bytes,
+                include_private=False,
+            )
+            per["markdown_snippets"] = _write_recipes_snapshot_from_markdown_snippets(
+                spec=spec,
+                dest=dest,
+                max_bytes=max_bytes,
+                max_blocks_per_file=int(args.recipes_max_md_blocks),
+            )
             projects = recipes_info["projects"]
             assert isinstance(projects, dict)
             projects[spec.name] = per
@@ -1927,6 +3010,9 @@ def main(argv: list[str] | None = None) -> int:
             from rag.build_index import build_index, build_index_parallel  # type: ignore
         except Exception as exc:
             raise SystemExit(f"Failed to import RAG index builder. Install `molsys-ai[rag]`. Error: {exc}") from exc
+
+        if bool(args.build_bm25):
+            os.environ["MOLSYS_AI_RAG_BUILD_BM25"] = "1"
 
         print(f"Building RAG index: {index_path}")
         if args.build_index_parallel:
