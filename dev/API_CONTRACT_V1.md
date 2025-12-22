@@ -46,7 +46,12 @@ Request JSON:
   "k": 5,
   "client": "cli",
   "rag": "auto",
-  "sources": "auto"
+  "sources": "auto",
+  "debug": false,
+  "rag_config": {
+    "bm25_weight": 0.25,
+    "hybrid_weight": 0.15
+  }
 }
 ```
 
@@ -57,7 +62,11 @@ Response JSON:
   "answer": "...",
   "sources": [
     {"id": 1, "path": "molsysmt/docs/...", "section": "# ...", "label": "Some_Label", "url": "https://www.uibcdf.org/molsysmt/...#Some_Label"}
-  ]
+  ],
+  "debug": {
+    "index_used": "project:molsysmt",
+    "retrieval_ms": 12.3
+  }
 }
 ```
 
@@ -68,6 +77,10 @@ Notes:
 - `client` is optional (`"widget"` | `"cli"`). If omitted, treat as `"widget"`.
 - `rag` is optional (`"on"` | `"off"` | `"auto"`). `"auto"` uses an LLM router to decide.
 - `sources` is optional (`"on"` | `"off"` | `"auto"`). When enabled, `sources` align with citations `[1]`, `[2]`, ...
+- `debug` is optional. When enabled, the server may include a `debug` field in the response. This is intended for
+  internal benchmarking and is typically disabled in public deployments.
+- `rag_config` is optional. It is an internal/benchmarking override for retrieval weights/knobs and is typically ignored
+  unless explicitly enabled server-side.
 
 Errors:
 

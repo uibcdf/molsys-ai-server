@@ -74,6 +74,7 @@ server/model_server/config.yaml
 # chat_api generated corpus + index (snapshotted from sibling repos)
 server/chat_api/data/docs/
 server/chat_api/data/rag_index.pkl
+server/chat_api/data/*.pkl
 server/chat_api/data/anchors.json
 server/chat_api/data/indexes/
 

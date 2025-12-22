@@ -43,6 +43,17 @@ class ScoredDocument:
     bm25_raw: float
 
 
+@dataclass(frozen=True)
+class RetrievalConfig:
+    max_per_source: int = 3
+    embed_preselect_factor: int = 10
+    embed_preselect_min: int = 50
+    hybrid_weight: float = 0.15
+    bm25_weight: float = 0.0
+    bm25_preselect_factor: int = 30
+    bm25_preselect_min: int = 200
+
+
 def _tokenize(text: str) -> list[str]:
     # Simple tokenizer for hybrid retrieval (stdlib-only).
     # Keep dots/underscores to preserve identifiers like `molsysmt.structure.get_rmsd`.
@@ -94,6 +105,16 @@ def load_index(index_path: Path) -> List[Document]:
     return out
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
 def _env_float(name: str, default: float) -> float:
     raw = (os.environ.get(name) or "").strip()
     if not raw:
@@ -104,15 +125,41 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
-def retrieve_scored(query: str, index: List[Document], k: int = 5) -> List[ScoredDocument]:
+def default_retrieval_config_from_env() -> RetrievalConfig:
+    max_per_source = max(_env_int("MOLSYS_AI_RAG_MAX_CHUNKS_PER_SOURCE", 3), 1)
+    embed_preselect_factor = max(_env_int("MOLSYS_AI_RAG_EMBED_PRESELECT_FACTOR", 10), 1)
+    embed_preselect_min = max(_env_int("MOLSYS_AI_RAG_EMBED_PRESELECT_MIN", 50), 1)
+    hybrid_weight = min(max(_env_float("MOLSYS_AI_RAG_HYBRID_WEIGHT", 0.15), 0.0), 1.0)
+    bm25_weight = min(max(_env_float("MOLSYS_AI_RAG_BM25_WEIGHT", 0.0), 0.0), 1.0)
+    bm25_preselect_factor = max(_env_int("MOLSYS_AI_RAG_BM25_PRESELECT_FACTOR", 30), 1)
+    bm25_preselect_min = max(_env_int("MOLSYS_AI_RAG_BM25_PRESELECT_MIN", 200), 1)
+    return RetrievalConfig(
+        max_per_source=max_per_source,
+        embed_preselect_factor=embed_preselect_factor,
+        embed_preselect_min=embed_preselect_min,
+        hybrid_weight=hybrid_weight,
+        bm25_weight=bm25_weight,
+        bm25_preselect_factor=bm25_preselect_factor,
+        bm25_preselect_min=bm25_preselect_min,
+    )
+
+
+def retrieve_scored(
+    query: str,
+    index: List[Document],
+    k: int = 5,
+    *,
+    config: RetrievalConfig | None = None,
+) -> List[ScoredDocument]:
     """Retrieve up to *k* documents relevant to the given query (with score breakdown)."""
 
     if not index or not query:
         return []
 
+    cfg = config or default_retrieval_config_from_env()
+
     k = max(int(k), 1)
-    max_per_source = int((os.environ.get("MOLSYS_AI_RAG_MAX_CHUNKS_PER_SOURCE") or "3").strip() or "3")
-    max_per_source = max(max_per_source, 1)
+    max_per_source = max(int(cfg.max_per_source), 1)
 
     embedding_model = get_default_embedding_model()
     query_embedding = np.array(embedding_model.embed([query])[0])
@@ -144,31 +191,25 @@ def retrieve_scored(query: str, index: List[Document], k: int = 5) -> List[Score
 
     # Preselect top-N by embedding similarity.
     base_scores.sort(key=lambda item: item[0], reverse=True)
-    preselect_factor = int((os.environ.get("MOLSYS_AI_RAG_EMBED_PRESELECT_FACTOR") or "10").strip() or "10")
-    preselect_factor = max(preselect_factor, 1)
-    preselect_min = int((os.environ.get("MOLSYS_AI_RAG_EMBED_PRESELECT_MIN") or "50").strip() or "50")
-    preselect_min = max(preselect_min, 1)
+    preselect_factor = max(int(cfg.embed_preselect_factor), 1)
+    preselect_min = max(int(cfg.embed_preselect_min), 1)
     preselect = min(len(base_scores), max(k * preselect_factor, preselect_min))
     embed_candidates = base_scores[:preselect]
     candidate_ids: set[int] = {i for _, i in embed_candidates}
 
     # Optional BM25 lexical candidates: complements embeddings for identifier-heavy queries.
-    bm25_weight = _env_float("MOLSYS_AI_RAG_BM25_WEIGHT", 0.0)
-    bm25_weight = min(max(bm25_weight, 0.0), 1.0)
+    bm25_weight = min(max(float(cfg.bm25_weight), 0.0), 1.0)
     bm25_scores: dict[int, float] = {}
     bm25: BM25Index | None = getattr(index, "bm25", None)  # type: ignore[attr-defined]
     if bm25 is not None and bm25_weight > 0.0:
-        bm25_factor = int((os.environ.get("MOLSYS_AI_RAG_BM25_PRESELECT_FACTOR") or "30").strip() or "30")
-        bm25_factor = max(bm25_factor, 1)
-        bm25_min = int((os.environ.get("MOLSYS_AI_RAG_BM25_PRESELECT_MIN") or "200").strip() or "200")
-        bm25_min = max(bm25_min, 1)
+        bm25_factor = max(int(cfg.bm25_preselect_factor), 1)
+        bm25_min = max(int(cfg.bm25_preselect_min), 1)
         top_bm25 = max(k * bm25_factor, bm25_min)
         for doc_id, score in bm25.search(query, top_n=top_bm25):
             bm25_scores[int(doc_id)] = float(score)
             candidate_ids.add(int(doc_id))
 
-    hybrid_weight = _env_float("MOLSYS_AI_RAG_HYBRID_WEIGHT", 0.15)
-    hybrid_weight = min(max(hybrid_weight, 0.0), 1.0)
+    hybrid_weight = min(max(float(cfg.hybrid_weight), 0.0), 1.0)
 
     q_tokens = _tokenize(query)
     max_bm25 = max(bm25_scores.values()) if bm25_scores else 0.0

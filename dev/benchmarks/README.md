@@ -76,13 +76,21 @@ python dev/benchmarks/view_run.py dev/benchmarks/runs/<run>.jsonl --only-fail
 ```
 
 For deeper evaluation (semantic correctness), manual review is still required
-at this stage; this harness is a baseline that we can later extend.
+at this stage (you still need to read the answers), but semantic symbol checks
+are already implemented (see `dev/decisions/ADR-020.md`).
 
-Planned: semantic checks that fail when answers mention nonexistent API symbols
-(see `dev/decisions/ADR-020.md`).
+The viewer prints full answers by default (with separators between questions).
+Use `--short` for a one-line preview. If a run captured response debug fields,
+the viewer prints them in full mode.
 
 Tip: stricter symbol check:
 
 ```bash
 python dev/benchmarks/run_chat_bench.py --in dev/benchmarks/questions_v0.jsonl --check-symbols --strict-symbols
+```
+
+Recommended default regression run ("quality gate"):
+
+```bash
+./dev/benchmarks/run_gate.sh
 ```

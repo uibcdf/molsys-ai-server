@@ -326,6 +326,10 @@ def main(argv: list[str] | None = None) -> int:
             "rag": str(item.get("rag") or args.rag),
             "sources": str(item.get("sources") or args.sources),
         }
+        if "rag_config" in item and isinstance(item.get("rag_config"), dict):
+            payload["rag_config"] = item.get("rag_config")
+        if "debug" in item and isinstance(item.get("debug"), bool):
+            payload["debug"] = bool(item.get("debug"))
 
         # Allow either explicit `messages` or a single-turn `query`.
         messages = item.get("messages")
@@ -360,9 +364,11 @@ def main(argv: list[str] | None = None) -> int:
 
         answer = ""
         sources: Any = None
+        debug: Any = None
         if isinstance(obj, dict):
             answer = str(obj.get("answer") or obj.get("content") or "")
             sources = obj.get("sources")
+            debug = obj.get("debug")
 
         evaluation = _evaluate(answer, sources, checks, symbols=symbols)
         ok = bool(evaluation.get("ok"))
@@ -375,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
                 "query": query,
                 "http": {"status": status, "elapsed_s": round(elapsed, 4)},
                 "request": payload,
-                "response": {"answer": answer, "sources": sources},
+                "response": {"answer": answer, "sources": sources, "debug": debug},
                 "eval": evaluation,
                 "raw": raw if status != 200 else None,
             }

@@ -23,7 +23,15 @@ from pydantic import BaseModel
 
 from agent.model_client import HTTPModelClient
 from rag.build_index import build_index
-from rag.retriever import Document, ScoredDocument, load_index, retrieve, retrieve_scored
+from rag.retriever import (
+    Document,
+    RetrievalConfig,
+    ScoredDocument,
+    default_retrieval_config_from_env,
+    load_index,
+    retrieve,
+    retrieve_scored,
+)
 
 app = FastAPI(title="MolSys-AI Chat API (RAG Orchestrator, MVP)")
 
@@ -90,6 +98,8 @@ class ChatRequest(BaseModel):
     client: str | None = None  # "widget" | "cli"
     rag: str | None = None  # "on" | "off" | "auto"
     sources: str | None = None  # "on" | "off" | "auto"
+    debug: bool | None = None
+    rag_config: dict[str, Any] | None = None
 
 
 class Source(BaseModel):
@@ -105,6 +115,7 @@ class Source(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[Source] = []
+    debug: dict[str, Any] | None = None
 
 
 def _env_int(name: str, default: int) -> int:
@@ -629,12 +640,14 @@ def _select_scored_for_api_question(scored: list[ScoredDocument], *, k: int) -> 
 
     # Pick top symbol cards first.
     picked: list[Document] = []
-    picked.extend([sd.doc for sd in symbol_cards[: min(2, k)]])
+    quota_symbol = max(_env_int("MOLSYS_AI_RAG_API_QUOTA_SYMBOL_CARDS", 2), 0)
+    picked.extend([sd.doc for sd in symbol_cards[: min(quota_symbol, k)]])
 
     # Notebook cluster: prefer pulling a coherent tutorial+section when available.
     remaining_slots = max(k - len(picked), 0)
     notebook_pool = [sd for sd in (tutorials + sections + recipes + recipe_cards) if _is_notebook_recipe(sd.doc)]
-    notebook_picked = _pick_notebook_cluster(notebook_pool, want=min(2, remaining_slots))
+    quota_cluster = max(_env_int("MOLSYS_AI_RAG_API_QUOTA_NOTEBOOK_CLUSTER", 3), 0)
+    notebook_picked = _pick_notebook_cluster(notebook_pool, want=min(quota_cluster, remaining_slots))
     picked.extend([sd.doc for sd in notebook_picked])
 
     remaining_slots = max(k - len(picked), 0)
@@ -1039,10 +1052,90 @@ def _build_identifier_rewrite_prompt(
 
 def _infer_project_hint(query: str) -> str | None:
     q = (query or "").lower()
+    # URLs.
+    if "uibcdf.org/molsysmt" in q:
+        return "molsysmt"
+    if "uibcdf.org/molsysviewer" in q:
+        return "molsysviewer"
+    if "uibcdf.org/pyunitwizard" in q:
+        return "pyunitwizard"
+    if "uibcdf.org/topomt" in q:
+        return "topomt"
     for name in ("molsysmt", "molsysviewer", "pyunitwizard", "topomt"):
         if name in q:
             return name
+    # Common alias patterns (best-effort). These are used only as routing hints.
+    if re.search(r"\bimport\s+molsysmt\s+as\s+msm\b", q) or re.search(r"\bmsm\.", q):
+        return "molsysmt"
     return None
+
+
+def _retrieval_config_from_request_override(override: dict[str, Any] | None) -> RetrievalConfig | None:
+    """Build a RetrievalConfig from a request override (if enabled).
+
+    This is intended for benchmarking/tuning only; do not enable in public deployments.
+    """
+    if not override:
+        return None
+
+    allow = _env_bool("MOLSYS_AI_CHAT_ALLOW_RAG_CONFIG", False)
+    if not allow:
+        return None
+
+    base = default_retrieval_config_from_env()
+
+    def as_int(key: str) -> int | None:
+        v = override.get(key)
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float) and v.is_integer():
+            return int(v)
+        if isinstance(v, str) and v.strip():
+            try:
+                return int(v.strip())
+            except ValueError:
+                return None
+        return None
+
+    def as_float(key: str) -> float | None:
+        v = override.get(key)
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str) and v.strip():
+            try:
+                return float(v.strip())
+            except ValueError:
+                return None
+        return None
+
+    max_per_source = as_int("max_per_source")
+    embed_preselect_factor = as_int("embed_preselect_factor")
+    embed_preselect_min = as_int("embed_preselect_min")
+    bm25_preselect_factor = as_int("bm25_preselect_factor")
+    bm25_preselect_min = as_int("bm25_preselect_min")
+
+    hybrid_weight = as_float("hybrid_weight")
+    bm25_weight = as_float("bm25_weight")
+
+    return RetrievalConfig(
+        max_per_source=max(max_per_source, 1) if max_per_source is not None else base.max_per_source,
+        embed_preselect_factor=(
+            max(embed_preselect_factor, 1) if embed_preselect_factor is not None else base.embed_preselect_factor
+        ),
+        embed_preselect_min=(max(embed_preselect_min, 1) if embed_preselect_min is not None else base.embed_preselect_min),
+        hybrid_weight=(
+            min(max(hybrid_weight, 0.0), 1.0) if hybrid_weight is not None else base.hybrid_weight
+        ),
+        bm25_weight=(min(max(bm25_weight, 0.0), 1.0) if bm25_weight is not None else base.bm25_weight),
+        bm25_preselect_factor=(
+            max(bm25_preselect_factor, 1) if bm25_preselect_factor is not None else base.bm25_preselect_factor
+        ),
+        bm25_preselect_min=(max(bm25_preselect_min, 1) if bm25_preselect_min is not None else base.bm25_preselect_min),
+    )
 
 
 def _doc_project(doc: Document) -> str | None:
@@ -1129,6 +1222,11 @@ async def chat(
     use_rag = rag_mode == "on"
     show_sources = sources_mode == "on"
 
+    debug_enabled = _env_bool("MOLSYS_AI_CHAT_DEBUG", False) or (
+        bool(req.debug) and _env_bool("MOLSYS_AI_CHAT_ALLOW_DEBUG", False)
+    )
+    debug: dict[str, Any] = {}
+
     # CLI defaults: specialist-first (RAG likely on), sources only when requested or inferred.
     if client_kind == "cli":
         if rag_mode == "auto":
@@ -1165,20 +1263,47 @@ async def chat(
         is_api_q = _looks_like_api_question(query)
 
         retrieve_k = max(req_k * 8, 40) if is_api_q else max(req_k * 4, req_k)
+
+        retrieval_cfg = _retrieval_config_from_request_override(req.rag_config)
+        if debug_enabled:
+            cfg = retrieval_cfg or default_retrieval_config_from_env()
+            debug["retrieval_config"] = {
+                "hybrid_weight": float(cfg.hybrid_weight),
+                "bm25_weight": float(cfg.bm25_weight),
+                "embed_preselect_factor": int(cfg.embed_preselect_factor),
+                "embed_preselect_min": int(cfg.embed_preselect_min),
+                "bm25_preselect_factor": int(cfg.bm25_preselect_factor),
+                "bm25_preselect_min": int(cfg.bm25_preselect_min),
+                "max_per_source": int(cfg.max_per_source),
+            }
+            debug["project_hint"] = hint
+            debug["api_question"] = bool(is_api_q)
+            debug["retrieval_k_internal"] = int(retrieve_k)
+
+        t0 = time.perf_counter()
         if hint and hint in _PROJECT_INDICES:
             idx = _PROJECT_INDICES[hint]
-            scored = retrieve_scored(query, idx, k=retrieve_k)
+            if debug_enabled:
+                debug["index_used"] = f"project:{hint}"
+            scored = retrieve_scored(query, idx, k=retrieve_k, config=retrieval_cfg)
         else:
-            scored = retrieve_scored(query, _DOCS_INDEX, k=retrieve_k)
+            if debug_enabled:
+                debug["index_used"] = "global"
+            scored = retrieve_scored(query, _DOCS_INDEX, k=retrieve_k, config=retrieval_cfg)
             if hint:
                 filtered = [sd for sd in scored if _doc_project(sd.doc) == hint]
                 scored = filtered or scored
 
         scored = _dedupe_scored_docs(scored)
+        if debug_enabled:
+            debug["retrieval_ms"] = round(1000.0 * (time.perf_counter() - t0), 2)
         _log_scored_docs(query, scored, label=("api" if is_api_q else "generic"))
         docs = _select_scored_for_api_question(scored, k=req_k) if is_api_q else [sd.doc for sd in scored[:req_k]]
         if is_api_q:
             docs = _augment_with_notebook_tutorials(docs, k=req_k)
+        if debug_enabled:
+            debug["context_k"] = int(len(docs))
+            debug["context_kinds"] = [str(d.metadata.get("kind") or "") for d in docs]
 
     context_lines: list[str] = []
     sources: list[Source] = []
@@ -1416,7 +1541,11 @@ async def chat(
     if show_sources and sources and not _has_bracket_citations(answer):
         answer = _inject_citations(answer, sources)
 
-    return ChatResponse(answer=answer, sources=sources if show_sources else [])
+    return ChatResponse(
+        answer=answer,
+        sources=sources if show_sources else [],
+        debug=(debug if debug_enabled else None),
+    )
 
 
 @app.on_event("startup")

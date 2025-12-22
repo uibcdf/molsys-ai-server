@@ -136,11 +136,17 @@ RAG corpus automation (live docs repos):
 
 - A reproducible corpus snapshot + index build is available via `dev/sync_rag_corpus.py` (targets sibling repos:
   `../molsysmt`, `../molsysviewer`, `../pyunitwizard`, `../topomt`).
+- Canonical full refresh wrapper (recommended; always uses `--clean` to avoid stale artifacts):
+  - `./dev/refresh_rag_full.sh`
+- Derived corpus layers (`api_surface/`, `symbol_cards/`, `recipes/`) are now purged-and-regenerated on each build step to
+  avoid stale artifacts when upstream repos change.
 - Corpus selection can be managed via a config file:
   - `python dev/sync_rag_corpus.py --corpus-config dev/corpus_config.toml ...`
   - example: `dev/corpus_config.toml.example`
 - By default, upstream `examples/` directories are excluded because they can be stale and may reinforce legacy
   APIs/aliases (opt-in with `dev/sync_rag_corpus.py --include-examples ...`).
+  - If you previously ran with `--include-examples`, re-run with `--clean` (or use `./dev/refresh_rag_full.sh`) to purge
+    lingering `examples/` snapshots and derived artifacts.
 - Optional derived corpus layers (quality work, see `dev/decisions/ADR-021.md`):
   - `--build-symbol-cards` (per-symbol cards),
   - `--build-recipes` (notebook + tests recipes),
@@ -176,6 +182,20 @@ RAG corpus automation (live docs repos):
     so the model receives tutorial context even if retrieval returned only a section/cell.
 - Retrieval tuning/debugging (implemented):
   - set `MOLSYS_AI_RAG_LOG_SCORES=1` to log score breakdown (embeddings/lexical/BM25) from `chat_api`.
+  - API-question context quotas (advanced; env-configurable):
+    - `MOLSYS_AI_RAG_API_QUOTA_SYMBOL_CARDS` (default: 2)
+    - `MOLSYS_AI_RAG_API_QUOTA_NOTEBOOK_CLUSTER` (default: 3) to include tutorial → section → cell when possible.
+  - Notebook recipe audit tool:
+    - `python dev/audit_notebook_recipes.py --notebook molsysmt/docs/content/user/tools/basic/select.ipynb ...`
+  - Benchmark-only tuning hooks (disabled by default):
+    - set `MOLSYS_AI_CHAT_ALLOW_RAG_CONFIG=1` to accept per-request `rag_config` overrides (BM25/hybrid weights, preselect knobs),
+    - set `MOLSYS_AI_CHAT_ALLOW_DEBUG=1` (or `MOLSYS_AI_CHAT_DEBUG=1`) to emit response `debug` fields.
+
+Note for sandboxed coding assistants:
+
+- Some sandboxed execution environments may not expose CUDA devices even when the host machine has GPUs.
+  In that case, prefer CPU-only validation (syntax checks, unit tests) and ask a human operator to run the GPU
+  end-to-end steps (corpus builds with `--index-devices` and full benchmarks).
 
 ## 4. Next Steps
 

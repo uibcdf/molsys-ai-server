@@ -138,6 +138,27 @@ Optional segmented indices (recommended):
 - `MOLSYS_AI_PROJECT_INDEX_DIR`
   - Directory containing one pickle per project, named:
     - `molsysmt.pkl`, `molsysviewer.pkl`, `pyunitwizard.pkl`, `topomt.pkl`
+
+Optional retrieval tuning (advanced / benchmarking only):
+
+- `MOLSYS_AI_RAG_BM25_WEIGHT` (default: 0.0)
+  - Enables BM25 mixing when a BM25 sidecar exists next to the index pickle.
+- `MOLSYS_AI_RAG_HYBRID_WEIGHT` (default: 0.15)
+  - Lightweight lexical boost (substring match on identifier-like tokens).
+
+Optional API-question context quotas (advanced):
+
+- `MOLSYS_AI_RAG_API_QUOTA_SYMBOL_CARDS` (default: 2)
+- `MOLSYS_AI_RAG_API_QUOTA_NOTEBOOK_CLUSTER` (default: 3)
+  - When the question looks like an API question, the backend tries to include a coherent notebook context:
+    tutorial → section → cell (best-effort).
+
+Optional debug / benchmarking helpers (do not enable in public deployments):
+
+- `MOLSYS_AI_CHAT_ALLOW_DEBUG` (default: false)
+  - If enabled, requests may set `"debug": true` and the backend will include `debug` fields in the response.
+- `MOLSYS_AI_CHAT_ALLOW_RAG_CONFIG` (default: false)
+  - If enabled, requests may set `"rag_config": {...}` to override retrieval weights for benchmarking (per request).
   - When present, and the user explicitly mentions a project name, the backend
     will query that project index instead of the global index to reduce
     cross-project API hallucinations.

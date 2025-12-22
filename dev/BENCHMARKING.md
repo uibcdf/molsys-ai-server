@@ -59,7 +59,11 @@ Record these alongside every benchmark run:
 
 ### 3.1 Corpus refresh time + coverage
 
-The canonical refresh workflow is `dev/sync_rag_corpus.py` (see ADR-019). It writes:
+The canonical refresh workflow is `dev/sync_rag_corpus.py` (see ADR-019). A convenience wrapper is also available:
+
+- `./dev/refresh_rag_full.sh` (recommended for most runs; always uses `--clean`)
+
+The refresh writes:
 
 - `server/chat_api/data/docs/_manifest.json`
 - `server/chat_api/data/docs/_coverage.json`
@@ -129,6 +133,15 @@ Audit “what got included”:
 
 ```bash
 python dev/audit_rag_corpus.py --rescan-sources
+```
+
+Notebook recipe audit (tutorial → section → cell):
+
+```bash
+python dev/audit_notebook_recipes.py \
+  --notebook molsysmt/docs/content/user/tools/basic/select.ipynb \
+  --notebook molsysmt/docs/content/user/tools/structure/get_distances.ipynb \
+  --notebook molsysmt/docs/content/showcase/barnase_barstar.ipynb
 ```
 
 ### 3.2 Engine latency and warmup
@@ -215,6 +228,12 @@ Stricter semantic check (recommended when you expect the answer to be correct an
 
 ```bash
 python dev/benchmarks/run_chat_bench.py --in dev/benchmarks/questions_v0.jsonl --check-symbols --strict-symbols
+```
+
+Quality gate (recommended as a default regression run):
+
+```bash
+./dev/benchmarks/run_gate.sh
 ```
 
 To review results without truncation:

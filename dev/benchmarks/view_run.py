@@ -69,6 +69,11 @@ def _print_row(row: dict[str, Any], *, full: bool, width: int) -> None:
     else:
         print("Sources: -")
 
+    debug = (row.get("response") or {}).get("debug")
+    if full and debug is not None:
+        print("Debug:")
+        print(json.dumps(debug, indent=2, ensure_ascii=False, sort_keys=True))
+
     if not ok:
         checks = (row.get("eval") or {}).get("checks") or {}
         bad = []
@@ -114,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     for r in data:
-        _print_row(r, full=(not bool(args.short)), width=int(args.width))
+        show_full = bool(args.full) or not bool(args.short)
+        _print_row(r, full=show_full, width=int(args.width))
 
     return 0
 

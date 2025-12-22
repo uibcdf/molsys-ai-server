@@ -301,6 +301,10 @@ def _write_symbol_cards_snapshot(
         return {"ok": False, "error": "No Python package directory found."}
 
     out_root = dest / spec.name / "symbol_cards"
+    # Always purge derived output to avoid stale cards lingering when upstream
+    # sources change or when selection config changes.
+    if out_root.exists():
+        shutil.rmtree(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
     modules: list[Path] = []
@@ -723,9 +727,12 @@ def _write_recipes_snapshot_from_ipynb(
     out_cells_root = root / "recipes" / "notebooks"
     out_sections_root = root / "recipes" / "notebooks_sections"
     out_tutorials_root = root / "recipes" / "notebooks_tutorials"
-    out_cells_root.mkdir(parents=True, exist_ok=True)
-    out_sections_root.mkdir(parents=True, exist_ok=True)
-    out_tutorials_root.mkdir(parents=True, exist_ok=True)
+    # Always purge derived output to avoid stale recipes lingering when upstream
+    # notebooks change or disappear.
+    for out_dir in (out_cells_root, out_sections_root, out_tutorials_root):
+        if out_dir.exists():
+            shutil.rmtree(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     notebooks = sorted(root.rglob("*.ipynb"))
     written_cells = 0
@@ -1142,6 +1149,10 @@ def _write_recipes_snapshot_from_tests(
         return {"ok": True, "tests_seen": 0, "recipes_written": 0, "note": "No tests/ directory found."}
 
     out_root = dest / spec.name / "recipes" / "tests"
+    # Always purge derived output to avoid stale snippets lingering after upstream
+    # tests change or disappear.
+    if out_root.exists():
+        shutil.rmtree(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
     files: list[Path] = []
@@ -1338,6 +1349,10 @@ def _write_recipes_snapshot_from_docstrings(
         return {"ok": False, "error": "No Python package directory found."}
 
     out_root = dest / spec.name / "recipes" / "docstrings"
+    # Always purge derived output to avoid stale snippets lingering after upstream
+    # symbols change or disappear.
+    if out_root.exists():
+        shutil.rmtree(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
     modules: list[Path] = []
@@ -1480,6 +1495,10 @@ def _write_recipes_snapshot_from_markdown_snippets(
         return {"ok": False, "error": "Project snapshot not found."}
 
     out_root = root / "recipes" / "markdown_snippets"
+    # Always purge derived output to avoid stale snippets lingering when upstream
+    # docs change or disappear.
+    if out_root.exists():
+        shutil.rmtree(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
     md_files = sorted(root.rglob("*.md"))
@@ -1663,6 +1682,10 @@ def _write_api_surface_snapshot(
         return {"ok": False, "error": "No Python package directory found."}
 
     out_root = dest / spec.name / "api_surface"
+    # Always purge derived output to avoid stale API-surface files lingering after
+    # upstream code changes or when selection config changes.
+    if out_root.exists():
+        shutil.rmtree(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
     modules_discovered = 0
@@ -2630,6 +2653,31 @@ def main(argv: list[str] | None = None) -> int:
             sub = dest / spec.name
             if sub.exists():
                 shutil.rmtree(sub)
+
+    # Hygiene: if examples are not selected, ensure stale snapshots (from a previous
+    # run that had examples enabled) do not linger and pollute retrieval.
+    if not bool(args.include_examples) and not args.dry_run:
+        for spec in sources:
+            sel = selection_by_source.get(spec.name) or selection_defaults
+            if "examples" in (sel.include_dirs or ()):
+                continue
+            project_root = dest / spec.name
+            if not project_root.exists():
+                continue
+            examples_dir = project_root / "examples"
+            if examples_dir.exists():
+                shutil.rmtree(examples_dir)
+            # Also remove any derived artifacts that might still reference examples/.
+            recipes_root = project_root / "recipes"
+            if recipes_root.exists():
+                for kind_dir in recipes_root.iterdir():
+                    ex = kind_dir / "examples"
+                    if ex.exists():
+                        shutil.rmtree(ex)
+            recipe_cards_root = project_root / "recipe_cards"
+            ex_cards = recipe_cards_root / "examples"
+            if ex_cards.exists():
+                shutil.rmtree(ex_cards)
 
     manifest: dict[str, object] = {
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

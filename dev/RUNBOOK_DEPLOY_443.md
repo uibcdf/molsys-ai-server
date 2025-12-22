@@ -120,6 +120,12 @@ python dev/sync_rag_corpus.py --clean --build-index --build-bm25 --build-project
 
 Then set `MOLSYS_AI_RAG_BM25_WEIGHT` in the service env (try `0.25`).
 
+Canonical “full refresh” shortcut (recommended):
+
+```bash
+./dev/refresh_rag_full.sh --dest /var/lib/molsys-ai/docs --index /var/lib/molsys-ai/rag_index.pkl --index-dir /var/lib/molsys-ai/indexes --anchors-out /var/lib/molsys-ai/anchors.json
+```
+
 ## 3) Install and enable systemd services
 
 Copy the example units:
