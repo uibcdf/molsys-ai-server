@@ -323,6 +323,10 @@ curl -sS -X POST http://127.0.0.1:8000/v1/chat \
   };
   ```
 
+- On `uibcdf.org` (and `github.io` previews), the widget overrides `backendUrl`
+  to `https://api.uibcdf.org/v1/chat`, so the published docs work without extra
+  query parameters. Ensure `MOLSYS_AI_CORS_ORIGINS` includes the docs origin.
+
 - When `mode: "backend"` is set, the widget:
   - sends user messages to `/v1/chat`,
   - keeps conversation history in the browser and sends it as `messages`,

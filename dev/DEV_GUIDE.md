@@ -156,7 +156,30 @@ cp server/model_server/config.example.yaml dev/model_server.local.yaml
 
 You should see all tests passing.
 
-## 6. Run the model server
+### 6.1 Public docs demo (uibcdf.org)
+
+When the docs are published under `https://www.uibcdf.org/...`, the widget defaults to backend mode and
+targets `https://api.uibcdf.org/v1/chat`. To reproduce the current public demo on this host:
+
+```bash
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_PROJECT_INDEX_DIR=server/chat_api/data/indexes \
+MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+MOLSYS_AI_CORS_ORIGINS=https://www.uibcdf.org \
+./dev/run_chat_api.sh --host 127.0.0.1 --port 8000
+```
+
+Then open the published page (example):
+
+- `https://www.uibcdf.org/molsys-ai-server/`
+
+The API endpoint should respond:
+
+```bash
+curl -fsS https://api.uibcdf.org/healthz
+```
+
+## 7. Run the model server
 
 ### 6.1 Stub backend (default)
 
@@ -202,7 +225,7 @@ For the full, validated procedure, see:
 
 - `dev/RUNBOOK_VLLM.md`
 
-## 7. Try the CLI
+## 8. Try the CLI
 
 With the virtual environment active:
 
@@ -222,7 +245,7 @@ Chat (single message):
 molsys-ai chat -m "Hello from MolSys-AI"
 ```
 
-## 8. Code style and tooling
+## 9. Code style and tooling
 
 - Linting and formatting: `ruff`
 - Testing: `pytest`
@@ -238,7 +261,7 @@ mypy client/agent server/model_server server/rag server/chat_api client/cli
 
 These commands are not yet enforced by CI, but are recommended during development.
 
-## 9. Where to start hacking
+## 10. Where to start hacking
 
 Suggested starting points for development:
 

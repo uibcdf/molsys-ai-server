@@ -1,10 +1,18 @@
-## Test
+## Test (public docs demo)
 
 ./dev/run_model_server.sh --config server/model_server/config.yaml --cuda-devices 0 --warmup
 
-MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001   MOLSYS_AI_PROJECT_INDEX_DIR=server/chat_api/data/indexes   MOLSYS_AI_EMBEDDINGS=sentence-transformers   ./dev/run_chat_api.sh --host 127.0.0.1 --port 8000
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
+  MOLSYS_AI_PROJECT_INDEX_DIR=server/chat_api/data/indexes \
+  MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+  MOLSYS_AI_CORS_ORIGINS=https://www.uibcdf.org \
+  ./dev/run_chat_api.sh --host 127.0.0.1 --port 8000
 
 curl https://api.uibcdf.org/healthz
+
+Open the published pilot:
+
+- https://www.uibcdf.org/molsys-ai-server/
 
 curl -sS -X POST https://api.uibcdf.org/v1/chat \
     -H 'Content-Type: application/json' \

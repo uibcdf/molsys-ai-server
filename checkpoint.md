@@ -115,8 +115,10 @@ The chat API stack is now validated end-to-end locally, including the browser/wi
   POST, retrieving the expected answer (`1VII`). A reproducible runner exists: `dev/smoke_widget.sh`.
 - Public deployment direction: serve docs via GitHub Pages under `https://uibcdf.org/...` and run the API separately under
   `https://api.uibcdf.org` (DNS `A` record in place). A deployment guide is captured in `dev/DEPLOY_API.md`.
+- Current public demo: `https://www.uibcdf.org/molsys-ai-server/` uses `https://api.uibcdf.org/v1/chat` (Cloudflare tunnel)
+  while the data-center firewall still blocks inbound `80/443`.
 - If the data-center firewall keeps `80/443` blocked to this GPU host, the fallback path for an external demo is:
-  external VPS + SSH reverse tunnel, documented in `dev/DEPLOY_API.md`.
+  external VPS + SSH reverse tunnel, documented in `dev/DEPLOY_API.md` (alternative to the Cloudflare tunnel).
 - Firewall reality: `80/443` are upstream-filtered by the data-center firewall. A scan shows `8080/tcp` reachable, but a
   remote request to `http://187.141.21.243:8080/` returns a Tomcat welcome page, so it is not currently usable for the API.
   For a public demo before `443` is opened, use an external VPS + SSH reverse tunnel (see `dev/DEPLOY_API.md`).

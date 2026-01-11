@@ -21,10 +21,12 @@
    pytest
    ```
 
-4. **Start the model server (engine; MVP stub)**:
+4. **Start the model server (engine)**:
 
    ```bash
-   PYTHONPATH=server:client python -m uvicorn model_server.server:app --host 127.0.0.1 --port 8001 --reload
+   cp server/model_server/config.example.yaml dev/model_server.local.yaml
+   # Edit dev/model_server.local.yaml and set model.local_path to your local model.
+   ./dev/run_model_server.sh --config dev/model_server.local.yaml --cuda-devices 0 --warmup
    ```
 
    Then open http://127.0.0.1:8001/docs to inspect the API.
@@ -32,6 +34,13 @@
 5. **Start the chat API (optional, routes to the engine)**:
 
    ```bash
+   ./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001
+   ```
+
+   If you are serving docs from a different origin, include CORS:
+
+   ```bash
+   MOLSYS_AI_CORS_ORIGINS=https://www.uibcdf.org \
    ./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001
    ```
 

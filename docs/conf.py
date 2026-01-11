@@ -36,6 +36,9 @@ html_theme = "pydata_sphinx_theme"
 # Static files (CSS, JS). We include the web widget from the repository so
 # that Sphinx copies it into `_static` and can be referenced on the pages.
 html_static_path = ["_static", "../server/web_widget"]
+html_css_files = [
+    "molsys_ai_pilot.css",
+]
 html_js_files = [
     "molsys_ai_config.js",
     "molsys_ai_widget.js",

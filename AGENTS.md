@@ -106,6 +106,14 @@ and pointed at the model server:
 ./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001
 ```
 
+For the public docs widget (`https://www.uibcdf.org/...`), set CORS and keep the
+backend bound to localhost (the widget targets `https://api.uibcdf.org/v1/chat`):
+
+```bash
+MOLSYS_AI_CORS_ORIGINS=https://www.uibcdf.org \
+./dev/run_chat_api.sh --engine-url http://127.0.0.1:8001 --host 127.0.0.1 --port 8000
+```
+
 ## Testing conventions
 
 - Run tests with `pytest`.

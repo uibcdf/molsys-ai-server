@@ -2,7 +2,7 @@
 
 This runbook is the “day we get port 443” checklist to deploy:
 
-- static docs on GitHub Pages (`https://uibcdf.org/...`)
+- static docs on GitHub Pages (`https://www.uibcdf.org/...`)
 - MolSys-AI API on this GPU host (`https://api.uibcdf.org`)
 
 Target architecture (recommended):
@@ -11,6 +11,13 @@ Target architecture (recommended):
   - `/v1/chat` → `127.0.0.1:8000` (public chat API; CORS enabled for the widget)
 - `chat_api` and `model_server` run as systemd services bound to `127.0.0.1`.
   - `chat_api` calls the model engine server privately over `http://127.0.0.1:8001/v1/engine/chat`.
+
+Current staging note:
+
+- While `443` is still blocked upstream, the public demo is served via a
+  Cloudflare tunnel that forwards `https://api.uibcdf.org` to local
+  `chat_api` (`127.0.0.1:8000`). This runbook is the target state once
+  ports are opened.
 
 ## 0) Prerequisites
 
@@ -70,7 +77,7 @@ Set (at minimum):
 - `MOLSYS_AI_ENGINE_API_KEYS` (generate a strong key for the internal engine endpoint)
 - `MOLSYS_AI_CHAT_API_KEYS` (optional: protect the public chat API)
 - `MOLSYS_AI_ENGINE_API_KEY` (a key allowed by `MOLSYS_AI_ENGINE_API_KEYS`; used by `chat_api`)
-- `MOLSYS_AI_CORS_ORIGINS` (include `https://uibcdf.org`)
+- `MOLSYS_AI_CORS_ORIGINS` (include `https://www.uibcdf.org`)
 
 ### 2.3 Model server YAML config
 

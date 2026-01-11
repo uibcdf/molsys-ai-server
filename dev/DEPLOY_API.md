@@ -2,7 +2,7 @@
 
 This guide describes a production-oriented deployment for:
 
-- public docs hosted on GitHub Pages under `https://uibcdf.org/...`
+- public docs hosted under `https://www.uibcdf.org/...` (GitHub Pages + custom domain)
 - a dynamic API hosted on this server under `https://api.uibcdf.org`
 
 Key idea: keep docs static (GH Pages) and run the chatbot API separately.
@@ -92,6 +92,36 @@ For a systemd-based deployment, see the example unit files:
 - `dev/systemd/molsys-ai-model.service.example`
 - `dev/systemd/molsys-ai-chat-api.service.example`
 - `dev/molsys-ai.env.example`
+
+### 2.1 Current staging: Cloudflare tunnel (working demo)
+
+While `80/443` remain blocked, the current public demo uses a Cloudflare tunnel
+that exposes `https://api.uibcdf.org` and forwards to the local `chat_api`
+on `127.0.0.1:8000`.
+
+To reproduce the working demo on this host:
+
+```bash
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_PROJECT_INDEX_DIR=server/chat_api/data/indexes \
+MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+MOLSYS_AI_CORS_ORIGINS=https://www.uibcdf.org \
+./dev/run_chat_api.sh --host 127.0.0.1 --port 8000
+```
+
+Then verify from any remote machine:
+
+```bash
+curl -fsS https://api.uibcdf.org/healthz
+```
+
+The docs widget (published under `https://www.uibcdf.org/...`) should respond
+without query params because the widget defaults to backend mode and points to
+`https://api.uibcdf.org/v1/chat`.
+
+Current published pilot:
+
+- `https://www.uibcdf.org/molsys-ai-server/`
 
 ## 3) Reverse proxy + TLS (recommended)
 

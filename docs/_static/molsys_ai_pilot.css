@@ -1,0 +1,37 @@
+.molsys-ai-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 560px);
+  gap: 1.5rem;
+  align-items: start;
+  padding: 1.25rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.molsys-ai-hero__copy p {
+  margin: 0 0 0.75rem 0;
+}
+
+.molsys-ai-hero__chat {
+  width: 100%;
+}
+
+.molsys-ai-hero__chat #molsys-ai-chat {
+  width: 100%;
+}
+
+.molsys-ai-hero__chat #molsys-ai-chat > div {
+  max-width: 100% !important;
+  height: 520px !important;
+}
+
+@media (max-width: 900px) {
+  .molsys-ai-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .molsys-ai-hero__chat #molsys-ai-chat > div {
+    height: 460px !important;
+  }
+}

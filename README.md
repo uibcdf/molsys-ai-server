@@ -21,6 +21,9 @@ Chat API note:
 
 - `POST /v1/chat` returns an `answer` that can cite bracketed sources (`[1]`, `[2]`, ...) and a `sources` list that can
   deep-link to published docs under `https://www.uibcdf.org/<tool>/...#Label` (when an anchors map is available).
+- The docs widget pilot is published at `https://www.uibcdf.org/molsys-ai-server/` and uses
+  `https://api.uibcdf.org/v1/chat` as its backend (via a Cloudflare tunnel while ports remain blocked).
+  Reproduction steps live in `docs/index.md` and `dev/DEPLOY_API.md`.
 
 ## Repository naming note
 

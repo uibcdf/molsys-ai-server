@@ -3,18 +3,25 @@
 This is a small Sphinx-based documentation site used to prototype the
 MolSys-AI chatbot integration.
 
-This pilot embeds the MolSys-AI chatbot into Sphinx-generated documentation.
-When the backend is available, the widget answers real questions and shows
-citations via a “Sources” dropdown. Placeholder mode remains available for
-offline demos or UI-only work.
+MolSys-AI is a language model trained to help you use the MolSysSuite tools.
+Use it when you need fast, cited guidance for this documentation or for other
+MolSysSuite libraries, and let it help you configure the workflow you need.
 
 
 ## AI helper (pilot)
 
-The box below is the MolSys-AI documentation assistant:
-
 ```{raw} html
-<div id="molsys-ai-chat"></div>
+<div class="molsys-ai-hero">
+  <div class="molsys-ai-hero__copy">
+    <p>
+      Ask about this documentation or any other MolSysSuite tool. MolSys-AI can
+      suggest steps and code patterns to shape the workflow you need.
+    </p>
+  </div>
+  <div class="molsys-ai-hero__chat">
+    <div id="molsys-ai-chat"></div>
+  </div>
+</div>
 ```
 
 
@@ -68,3 +75,29 @@ You should see the widget send requests to the backend and get real answers.
 If you need placeholder mode (no backend calls), open:
 
 - `http://127.0.0.1:8080/?molsys_ai_mode=placeholder`
+
+## Public demo (uibcdf.org)
+
+The published pilot is available at:
+
+- `https://www.uibcdf.org/molsys-ai-server/`
+
+The widget defaults to backend mode and automatically targets:
+
+- `https://api.uibcdf.org/v1/chat`
+
+To reproduce the public setup on this host:
+
+1) Start the model engine locally (`127.0.0.1:8001`).
+2) Start `chat_api` with CORS allowing the docs origin:
+
+```bash
+MOLSYS_AI_ENGINE_URL=http://127.0.0.1:8001 \
+MOLSYS_AI_PROJECT_INDEX_DIR=server/chat_api/data/indexes \
+MOLSYS_AI_EMBEDDINGS=sentence-transformers \
+MOLSYS_AI_CORS_ORIGINS=https://www.uibcdf.org \
+./dev/run_chat_api.sh --host 127.0.0.1 --port 8000
+```
+
+3) Ensure `https://api.uibcdf.org/healthz` responds (currently via a Cloudflare tunnel).
+4) Open the published page and send a question in the widget.
