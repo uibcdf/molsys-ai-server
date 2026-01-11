@@ -30,6 +30,163 @@
     return typeof value === "string" && value.trim() ? value.trim() : null;
   }
 
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function highlightPython(code) {
+    var tokenId = 0;
+    var tokens = [];
+    function protect(re, cls) {
+      code = code.replace(re, function (match) {
+        var token = "@@@TOK_" + tokenId + "@@@";
+        tokens.push({ token: token, cls: cls, text: match });
+        tokenId += 1;
+        return token;
+      });
+    }
+
+    protect(/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, "tok-string");
+    protect(/#[^\n]*/g, "tok-comment");
+    protect(/\b\d+(?:\.\d+)?\b/g, "tok-number");
+    protect(
+      /\b(as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|pass|raise|return|True|try|while|with|yield)\b/g,
+      "tok-keyword"
+    );
+
+    var escaped = escapeHtml(code);
+    tokens.forEach(function (tok) {
+      var replacement = '<span class="' + tok.cls + '">' + escapeHtml(tok.text) + "</span>";
+      escaped = escaped.split(tok.token).join(replacement);
+    });
+    return escaped;
+  }
+
+  function renderInline(text) {
+    return escapeHtml(text).replace(/`([^`]+)`/g, function (_, code) {
+      return "<code>" + escapeHtml(code) + "</code>";
+    });
+  }
+
+  function renderMarkdownLite(text) {
+    var lines = String(text || "").split(/\r?\n/);
+    var out = [];
+    var inCode = false;
+    var codeLang = "";
+    var codeLines = [];
+    var paraLines = [];
+    var listItems = [];
+
+    function flushParagraph() {
+      if (!paraLines.length) return;
+      var paragraph = renderInline(paraLines.join(" ").trim());
+      if (paragraph) {
+        out.push("<p>" + paragraph + "</p>");
+      }
+      paraLines = [];
+    }
+
+    function flushList() {
+      if (!listItems.length) return;
+      var items = listItems.map(function (item) {
+        return "<li>" + renderInline(item.trim()) + "</li>";
+      });
+      out.push("<ul>" + items.join("") + "</ul>");
+      listItems = [];
+    }
+
+    function flushCode() {
+      var raw = codeLines.join("\n");
+      var lang = (codeLang || "").toLowerCase();
+      var highlighted = lang === "python" || lang === "py" ? highlightPython(raw) : escapeHtml(raw);
+      var className = lang ? "language-" + lang : "";
+      out.push("<pre><code class=\"" + className + "\">" + highlighted + "</code></pre>");
+      codeLines = [];
+      codeLang = "";
+    }
+
+    lines.forEach(function (line) {
+      var fence = line.match(/^```(\w+)?\s*$/);
+      if (fence) {
+        if (inCode) {
+          flushCode();
+          inCode = false;
+        } else {
+          flushParagraph();
+          flushList();
+          inCode = true;
+          codeLang = fence[1] || "";
+        }
+        return;
+      }
+
+      if (inCode) {
+        codeLines.push(line);
+        return;
+      }
+
+      if (!line.trim()) {
+        flushParagraph();
+        flushList();
+        return;
+      }
+
+      var listMatch = line.match(/^\s*[-*]\s+(.*)$/);
+      if (listMatch) {
+        flushParagraph();
+        listItems.push(listMatch[1]);
+        return;
+      }
+
+      flushList();
+      paraLines.push(line.trim());
+    });
+
+    if (inCode) {
+      flushCode();
+    }
+    flushParagraph();
+    flushList();
+
+    return out.join("\n");
+  }
+
+  function enhanceCodeBlocks(root) {
+    if (!root) return;
+    var blocks = root.querySelectorAll("pre > code");
+    blocks.forEach(function (code) {
+      var pre = code.parentElement;
+      if (!pre) return;
+      if (!pre.classList.contains("molsys-ai-code")) {
+        pre.classList.add("molsys-ai-code");
+      }
+
+      if (!pre.querySelector(".molsys-ai-copy")) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "molsys-ai-copy";
+        button.textContent = "Copy";
+        button.addEventListener("click", function () {
+          var text = code.textContent || "";
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+              button.textContent = "Copied";
+              setTimeout(function () {
+                button.textContent = "Copy";
+              }, 1500);
+            });
+          }
+        });
+        pre.appendChild(button);
+      }
+    });
+  }
+
   function createChatContainer(root) {
     const globalConfig = window.molsysAiChatConfig || {};
     const mode = globalConfig.mode || "placeholder"; // "placeholder" | "backend"
@@ -38,6 +195,7 @@
       globalConfig.backendUrl ||
       (window.location.origin.replace(/\/+$/, "") + "/v1/chat");
     const container = document.createElement("div");
+    container.className = "molsys-ai-chat";
     container.style.border = "1px solid #ccc";
     container.style.borderRadius = "6px";
     container.style.maxWidth = "400px";
@@ -49,7 +207,7 @@
     container.style.backgroundColor = "#fafafa";
 
     const header = document.createElement("div");
-    header.textContent = "MolSys-AI Docs Helper (pilot)";
+    header.textContent = "MolSys-AI Docs Helper";
     header.style.padding = "8px 10px";
     header.style.borderBottom = "1px solid #ddd";
     header.style.fontWeight = "bold";
@@ -98,7 +256,12 @@
       wrapper.style.alignItems = role === "user" ? "flex-end" : "flex-start";
 
       const bubble = document.createElement("div");
-      bubble.textContent = text;
+      if (role === "assistant") {
+        bubble.innerHTML = renderMarkdownLite(text || "");
+        enhanceCodeBlocks(bubble);
+      } else {
+        bubble.textContent = text;
+      }
       bubble.style.margin = "4px 0";
       bubble.style.padding = "6px 8px";
       bubble.style.borderRadius = "4px";
