@@ -317,7 +317,7 @@ curl -sS -X POST http://127.0.0.1:8000/v1/chat \
 
   ```js
   window.molsysAiChatConfig = window.molsysAiChatConfig || {
-    mode: "placeholder", // or "backend"
+    mode: "backend", // or "placeholder"
     backendUrl: window.location.origin.replace(/\/+$/, "") + "/v1/chat",
     apiKey: "", // optional; sent as Authorization: Bearer <apiKey>
   };
@@ -327,6 +327,9 @@ curl -sS -X POST http://127.0.0.1:8000/v1/chat \
   - sends user messages to `/v1/chat`,
   - keeps conversation history in the browser and sends it as `messages`,
   - displays the `answer` field returned by this backend.
+
+- When `mode: "placeholder"` is set, the widget skips network calls and replies
+  with a fixed placeholder message (useful for offline demos or UI-only work).
 
 ## Future work
 

@@ -3,16 +3,15 @@
 This is a small Sphinx-based documentation site used to prototype the
 MolSys-AI chatbot integration.
 
-For now, the chatbot does not answer real questions; it simply shows a
-friendly placeholder message (or, in backend mode, calls the chat API
-backend and displays an answer plus a small “Sources” dropdown per reply).
-In future iterations it will call the MolSys-AI backend to answer questions
-about the MolSysSuite documentation and workflows.
+This pilot embeds the MolSys-AI chatbot into Sphinx-generated documentation.
+When the backend is available, the widget answers real questions and shows
+citations via a “Sources” dropdown. Placeholder mode remains available for
+offline demos or UI-only work.
 
 
 ## AI helper (pilot)
 
-The box below is a placeholder for the MolSys-AI documentation assistant:
+The box below is the MolSys-AI documentation assistant:
 
 ```{raw} html
 <div id="molsys-ai-chat"></div>
@@ -65,3 +64,7 @@ python -m http.server 8080 --directory docs/_build/html
 - `http://127.0.0.1:8080/?molsys_ai_mode=backend&molsys_ai_backend_url=http://127.0.0.1:8000/v1/chat`
 
 You should see the widget send requests to the backend and get real answers.
+
+If you need placeholder mode (no backend calls), open:
+
+- `http://127.0.0.1:8080/?molsys_ai_mode=placeholder`

@@ -5,7 +5,7 @@
 window.molsysAiChatConfig = window.molsysAiChatConfig || {
   // "placeholder": always show the friendly placeholder reply.
   // "backend": call the MolSys-AI chat API and show its responses.
-  mode: "placeholder",
+  mode: "backend",
   // By default, talk to a chat API backend on the same origin.
   // If you serve docs under `uibcdf.org` and the API under `api.uibcdf.org`,
   // override this (or use the query-param toggles below).
@@ -25,9 +25,15 @@ window.molsysAiChatConfig = window.molsysAiChatConfig || {
 // backend (see `MOLSYS_AI_CORS_ORIGINS` in `server/chat_api/README.md`).
 (function () {
   try {
-    // If we are on the public docs domain, default to the public API domain.
+    // If we are on the public docs domains, default to the public API domain.
     // This avoids requiring per-site config for `/molsysmt`, `/molsysviewer`, etc.
-    if (window.location && window.location.hostname && window.location.hostname.endsWith("uibcdf.org")) {
+    // It also enables GitHub Pages previews (github.io) to talk to the API.
+    if (
+      window.location &&
+      window.location.hostname &&
+      (window.location.hostname.endsWith("uibcdf.org") ||
+        window.location.hostname.endsWith("github.io"))
+    ) {
       window.molsysAiChatConfig.backendUrl = "https://api.uibcdf.org/v1/chat";
     }
 
