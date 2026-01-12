@@ -25,6 +25,13 @@ Chat API note:
   `https://api.uibcdf.org/v1/chat` as its backend (via a Cloudflare tunnel while ports remain blocked).
   Reproduction steps live in `docs/index.md` and `dev/DEPLOY_API.md`.
 
+Local launch shortcuts (optional):
+
+- `scripts/launch_model_server.sh` (engine)
+- `scripts/launch_chatbot_api.sh` (chat API)
+- `scripts/test_health.sh`
+- `scripts/test_from_remote_terminal.sh`
+
 ## Repository naming note
 
 This repository is the server-side codebase and is expected to live as **`molsys-ai-server`**.

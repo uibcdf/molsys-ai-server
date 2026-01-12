@@ -139,6 +139,15 @@ use the helper scripts:
 
 See `dev/RUNBOOK_VLLM.md` for the validated vLLM environment and a sample model YAML.
 
+Optional shortcuts (background + logs + PID files):
+
+- `scripts/launch_model_server.sh`
+- `scripts/launch_chatbot_api.sh`
+- `scripts/test_health.sh`
+- `scripts/test_from_remote_terminal.sh`
+
+These write logs to `scripts/_logs/` and PIDs to `scripts/_pids/`.
+
 Example (two terminals):
 
 ```bash

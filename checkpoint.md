@@ -125,6 +125,10 @@ The chat API stack is now validated end-to-end locally, including the browser/wi
 - Reverse proxy scaffolding is now available in-repo:
   - Caddy: `dev/Caddyfile.example`
   - systemd units + env file: `dev/systemd/`, `dev/molsys-ai.env.example`
+- Optional local launch shortcuts are available under `scripts/`:
+  - `scripts/launch_model_server.sh` / `scripts/launch_chatbot_api.sh`
+  - `scripts/test_health.sh` / `scripts/test_from_remote_terminal.sh`
+  - background mode writes logs to `scripts/_logs/` and PIDs to `scripts/_pids/`.
 
 Tool execution policy and environment separation:
 
