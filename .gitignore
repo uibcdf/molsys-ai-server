@@ -90,3 +90,7 @@ codex_session.sh
 
 # Benchmark runs (generated)
 dev/benchmarks/runs/
+
+# Local launch logs and pid files
+scripts/_logs/
+scripts/_pids/
