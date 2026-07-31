@@ -1,6 +1,8 @@
 # MolSys-AI Server Development Guide
 
-This directory defines the implementation direction of `molsys-ai-server`.
+> **Design status**
+>
+> These documents combine confirmed repository decisions, remembered ideas pending verification and new architectural proposals.
 
 ## Mission
 
@@ -14,12 +16,23 @@ This directory defines the implementation direction of `molsys-ai-server`.
 
 The server is not the scientific execution runtime. It must not execute MolSysSuite workflows on behalf of users or keep live molecular systems in memory.
 
-## Documents
+## Architecture and migration
 
-- [ARCHITECTURE.md](ARCHITECTURE.md): target architecture and boundaries.
-- [TRANSFORMATION.md](TRANSFORMATION.md): migration from the current repository layout.
-- [ROADMAP.md](ROADMAP.md): implementation sequence and milestones.
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [TRANSFORMATION.md](TRANSFORMATION.md)
+- [ROADMAP.md](ROADMAP.md)
+
+## Service contracts
+
+- [PUBLIC_API.md](PUBLIC_API.md): versioned inference, knowledge and assistant APIs.
+- [KNOWLEDGE_SERVICE.md](KNOWLEDGE_SERVICE.md): corpus lifecycle, retrieval, releases and guardrails.
+- [AUTHORIZATION.md](AUTHORIZATION.md): credentials, authorization, quotas and tenant isolation.
+
+## Operations and quality
+
+- [DEPLOYMENT.md](DEPLOYMENT.md): deployment topology, isolation and observability.
+- [EVALUATION.md](EVALUATION.md): release gates for inference, knowledge, security and operations.
 
 ## Guiding principle
 
-RAG remains an implementation technique inside the knowledge service, not the organizing principle of MolSys-AI. The server should expose reliable knowledge and inference capabilities that can be used by documentation chatbots and by the local scientific copilot.
+RAG remains an implementation technique inside the knowledge service, not the organizing principle of MolSys-AI. The server exposes reliable knowledge and inference capabilities for documentation chatbots and the local scientific copilot.
