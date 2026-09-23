@@ -1,92 +1,46 @@
-
 # MolSys-AI Server
 
-This repository hosts the **server-side** components of the MolSys-AI project for the UIBCDF ecosystem:
+**MolSys-AI Server provides the remote inference and MolSysSuite software-knowledge services of MolSys-AI.**
 
-- MolSysMT
-- MolSysViewer
-- TopoMT
-- and related tools in the MolSysSuite ecosystem.
+Its responsibilities include:
 
-MolSys-AI aims to provide:
+- model serving;
+- MolSysSuite documentation/software knowledge;
+- RAG and structured retrieval;
+- API surfaces, symbol cards, recipes, citations, and guardrails;
+- documentation assistants;
+- versioned remote service APIs;
+- authentication, deployment, and observability.
 
-- An **autonomous agent** that can design and execute workflows using MolSysSuite tools.
-- A **CLI interface** to interact with the agent from the terminal.
-- A **documentation chatbot** embedded in Sphinx/GitHub Pages.
-- A flexible **model serving** layer for self-hosted LLMs.
+It is **not** the MolSysSuite scientific execution runtime and it is **not** MOLI Agent.
 
-This repository currently contains the initial architecture, decisions and development roadmap.
+## Project structure
 
-Chat API note:
+MolSys-AI is organized across:
 
-- `POST /v1/chat` returns an `answer` that can cite bracketed sources (`[1]`, `[2]`, ...) and a `sources` list that can
-  deep-link to published docs under `https://www.uibcdf.org/<tool>/...#Label` (when an anchors map is available).
-- The docs widget pilot is published at `https://www.uibcdf.org/molsys-ai-server/` and uses
-  `https://api.uibcdf.org/v1/chat` as its backend (via a Cloudflare tunnel while ports remain blocked).
-  Reproduction steps live in `docs/index.md` and `dev/DEPLOY_API.md`.
+- [molsys-ai](https://github.com/uibcdf/molsys-ai) — umbrella/architecture;
+- [molsys-ai-server](https://github.com/uibcdf/molsys-ai-server) — this repository;
+- [molsys-ai-client](https://github.com/uibcdf/molsys-ai-client) — typed remote-service SDK;
+- [molsys-ai-agent](https://github.com/uibcdf/molsys-ai-agent) — MolSysSuite specialist agent.
 
-Local launch shortcuts (optional):
+## Current operational assets
 
-- `scripts/launch_model_server.sh` (engine)
-- `scripts/launch_chatbot_api.sh` (chat API)
-- `scripts/test_health.sh`
-- `scripts/test_from_remote_terminal.sh`
+The current chat API, documentation widget, vLLM stack, corpus/index pipeline, hybrid retrieval, citations, symbol verification, benchmarks, and deployment infrastructure remain strategic server assets.
 
-## Repository naming note
+The documentation chatbot is a read-only product surface backed by these services.
 
-This repository is the server-side codebase and is expected to live as **`molsys-ai-server`**.
-The Python package and user-facing command for end users remain `molsys-ai`.
+## Legacy migration note
 
-See:
+This repository predates the final split and still contains `client/agent` and `client/cli` prototypes. They are retained temporarily as migration sources.
 
-- `dev/ARCHITECTURE.md` for high-level architecture.
-- `dev/ROADMAP.md` for the initial roadmap.
-- `dev/CONSTRAINTS.md` for current constraints and assumptions.
-- `dev/decisions/` for Architectural Decision Records (ADRs).
+- planning/execution/tool-inspection concepts belong in `molsys-ai-agent`;
+- HTTP transport/configuration/auth/typed remote contracts belong in `molsys-ai-client`;
+- inference, software knowledge, RAG, documentation assistants, and remote APIs remain here.
 
-## Development environment
+Do not remove legacy code until replacement paths and compatibility tests are functional. See `devguide/TRANSFORMATION.md`.
 
-Two environments are commonly used:
+## Environment boundary
 
-1. **Development (general code + docs + tests)** via `environment.yml`.
-2. **Inference (vLLM on RTX GPUs)** via the runbook in `dev/RUNBOOK_VLLM.md`.
+The server-side inference environment should remain isolated from MolSysSuite scientific toolchains. MolSysSuite execution belongs to the agent/scientific environment.
 
-### Option A — Development environment (`environment.yml`)
-
-The recommended way to create a development environment is with `mamba` or `conda`:
-
-```bash
-mamba env create -f environment.yml
-mamba activate molsys-ai
-```
-
-or:
-
-```bash
-conda env create -f environment.yml
-conda activate molsys-ai
-```
-
-This environment uses Python 3.12 and includes the core Python dependencies used by this repository.  
-Alternative setups using `venv` + `pip` are described in `dev/DEV_GUIDE.md`.
-
-Note: `environment.yml` intentionally keeps MolSysSuite tools commented out by default to avoid
-pulling extra CUDA-related stacks into the same environment used for vLLM inference.
-For local tool execution, use a dedicated agent environment (see `client/cli/README.md`).
-
-Note on Python packaging:
-
-- `pip install molsys-ai` is intended to install the **CLI client** (lightweight).
-- Server/RAG/docs dependencies are installed via extras (for development use `pip install -e ".[dev]"`).
-
-### Option B — Inference environment (vLLM)
-
-For the current, working vLLM setup (CUDA 12.9 + AWQ model + `uvicorn` smoke tests),
-see:
-
-- `dev/RUNBOOK_VLLM.md`
-- `healthy_vllm_env.md` (minimal Conda+pip environment note)
-
-## Language policy
-
-All text in this repository (source code, comments, documentation, development notes, and configuration files) must be written in **English**.
+See `devguide/` and `dev/` for architecture, operational runbooks, deployment, benchmarking, and migration details.
