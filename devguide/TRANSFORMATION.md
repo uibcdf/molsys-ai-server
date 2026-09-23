@@ -2,74 +2,54 @@
 
 ## Objective
 
-Transform the current repository into a focused server for inference, knowledge and public documentation assistants without discarding mature work already present.
+Transform the repository into a focused server for inference, MolSysSuite Software Knowledge, and documentation assistants without discarding mature operational work.
 
-## Preserve
+## Preserve as capabilities/assets
 
-The following areas are considered strategic assets:
+- working documentation-chatbot capability;
+- model serving and deployment;
+- current ingress/deployment infrastructure while useful;
+- corpus synchronization and provenance;
+- project-specific indices;
+- API surfaces and symbol cards;
+- recipes/tutorial-derived knowledge;
+- BM25, dense and hybrid retrieval;
+- citations and anchors;
+- symbol verification and re-reading;
+- benchmark infrastructure.
 
-- model serving and deployment,
-- the working Cloudflare Tunnel ingress for `https://api.uibcdf.org`,
-- localhost isolation between the public FastAPI service and the private model backend,
-- FastAPI service boundaries,
-- corpus synchronization and provenance,
-- project-specific indices,
-- API surfaces,
-- symbol cards,
-- notebook, test, docstring and Markdown recipes,
-- BM25 and hybrid retrieval,
-- source citations and anchors,
-- symbol verification and re-reading,
-- benchmark infrastructure,
-- hardware and offline-build assumptions.
+Preservation of the chatbot means preservation of equivalent user-visible capability, **not permanent freezing of its current endpoint, RAG implementation, schemas, or widget internals**.
 
-The Cloudflare Tunnel is reusable infrastructure rather than a legacy chatbot-specific workaround. During migration it should continue exposing the public API gateway while the current `/v1/chat` contract remains compatible. New health, capability, inference, knowledge and documentation-assistant routes can be introduced behind the same ingress.
+## Target interpretation
 
-The private model backend must remain bound to localhost and must not be exposed directly. Cloudflare provides ingress, TLS and traffic controls; application authentication and authorization remain server responsibilities. See `DEPLOYMENT.md` for the target topology and `dev/DEPLOY_API.md` for the current operational runbook.
+The current RAG stack becomes part of the reusable **MolSysSuite Software Knowledge Service**. The documentation chatbot is its first operational consumer, not its owner.
 
 ## Move or extract
 
-Code under legacy client and agent directories should be reviewed and classified:
+Legacy code is classified by responsibility:
 
-- generic HTTP transport may move to `molsys-ai-client`,
-- CLI concepts may move to `molsys-ai`,
-- planner, executor and tool prototypes may inform the new design but should not be copied unchanged,
-- schemas shared across the boundary must receive explicit ownership and versioning.
+- HTTP transport/config/auth → `molsys-ai-client`;
+- planner/executor/tool/API-inspection/local execution → `molsys-ai-agent`;
+- inference/Software Knowledge/docs assistants → remain in server;
+- mixed CLI code → split by responsibility.
 
-## Deprecate
+## Deprecate gradually
 
-The server should gradually deprecate:
-
-- user-facing CLI packaging,
-- local MolSysSuite execution,
-- agent state and orchestration,
-- arbitrary shell tools,
-- assumptions that one chat endpoint represents the complete MolSys-AI product.
+- server-owned local MolSysSuite execution;
+- agent state/orchestration inside server;
+- arbitrary local shell execution in server;
+- user-facing agent packaging from server;
+- assumption that one chat endpoint represents the complete MolSys-AI product.
 
 ## Compatibility strategy
 
-1. Keep current documentation-chat behavior working through `api.uibcdf.org`.
-2. Preserve the existing Cloudflare Tunnel while evolving the application behind it.
-3. Introduce stable inference and knowledge contracts alongside existing endpoints.
-4. Move client functionality incrementally.
-5. Mark legacy modules clearly before removal.
-6. Add compatibility tests for `molsys-ai-client`.
-7. Remove legacy client/agent code only after replacement paths are functional.
+1. Establish chatbot capability baseline.
+2. Introduce stable inference/knowledge contracts alongside current interfaces.
+3. Keep `/v1/chat` compatible while existing consumers need it.
+4. Implement typed client functionality incrementally.
+5. Establish MolSys-AI Agent independently.
+6. Migrate mixed legacy code by responsibility.
+7. Decompose mixed tests by repository ownership.
+8. Remove legacy server modules only after replacement paths and compatibility gates pass.
 
-## Repository archaeology register
-
-During migration, maintain a table of recovered ideas with evidence and status:
-
-| Idea | Evidence | Status | Destination |
-|---|---|---|---|
-| Server/client split | ADR-018 | Confirmed | all repositories |
-| Local scientific execution | constraints/architecture | Confirmed | `molsys-ai` |
-| Code-aware knowledge corpus | ADR-019/021 | Confirmed | server |
-| API-symbol verification | ADR-020 | Confirmed | server |
-| Cloudflare Tunnel at `api.uibcdf.org` | `README.md`, `dev/DEPLOY_API.md` | Confirmed and reusable | server deployment |
-| Local public API on `127.0.0.1:8000` with private model on `127.0.0.1:8001` | `dev/DEPLOY_API.md` | Confirmed and reusable | server deployment |
-| Interactive CLI like Codex CLI | pending search | Remembered — verify | `molsys-ai` |
-| Tokenized user profiles | pending search | Remembered — verify | client/server |
-| Multiple environment profiles | pending search | Remembered — verify | client/core |
-
-This register should be updated as repository history is inspected.
+A compatibility facade may outlive the internal implementation it originally exposed.
