@@ -1,26 +1,24 @@
 # MolSys-AI Server Development Guide
 
-> **Design status**
->
-> These documents combine confirmed repository decisions, remembered ideas pending verification and new architectural proposals.
-
 ## Mission
 
 `molsys-ai-server` provides shared remote services for MolSys-AI:
 
-- language-model serving,
-- public documentation assistants,
-- static knowledge services for MolSysSuite,
-- reproducible corpus and index construction,
+- language-model serving;
+- MolSysSuite software-knowledge services;
+- public documentation assistants;
+- reproducible corpus/index construction;
 - grounded answers with citations and API guardrails.
 
-The server is not the scientific execution runtime. It must not execute MolSysSuite workflows on behalf of users or keep live molecular systems in memory.
+The server is not the scientific execution runtime. MolSysSuite-specialist planning/execution belongs to [molsys-ai-agent](https://github.com/uibcdf/molsys-ai-agent).
 
 ## Architecture and migration
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [TRANSFORMATION.md](TRANSFORMATION.md)
 - [ROADMAP.md](ROADMAP.md)
+
+Legacy `client/agent` and `client/cli` modules remain temporarily as migration sources. Move responsibilities incrementally according to `TRANSFORMATION.md`; preserve working server behavior.
 
 ## Service contracts
 
@@ -30,9 +28,11 @@ The server is not the scientific execution runtime. It must not execute MolSysSu
 
 ## Operations and quality
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): deployment topology, isolation and observability.
-- [EVALUATION.md](EVALUATION.md): release gates for inference, knowledge, security and operations.
+- [DEPLOYMENT.md](DEPLOYMENT.md)
+- [EVALUATION.md](EVALUATION.md)
 
 ## Guiding principle
 
-RAG remains an implementation technique inside the knowledge service, not the organizing principle of MolSys-AI. The server exposes reliable knowledge and inference capabilities for documentation chatbots and the local scientific copilot.
+RAG is an implementation technique inside the software-knowledge service, not the identity of MolSys-AI.
+
+> **MolSys-AI Server knows about MolSysSuite software; MolSys-AI Agent operates MolSysSuite.**
