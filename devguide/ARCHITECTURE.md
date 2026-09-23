@@ -1,12 +1,8 @@
 # Target Server Architecture
 
-> **Design status**
->
-> This document combines confirmed repository decisions with the intended future role of the server. Any remembered feature not yet verified must remain explicitly marked as provisional.
-
 ## Mission
 
-`molsys-ai-server` provides shared remote capabilities that can be consumed by the local scientific copilot and by public documentation assistants.
+`molsys-ai-server` provides shared remote inference and **MolSysSuite Software Knowledge** capabilities for documentation assistants, MolSys-AI Agent, and other authorized clients.
 
 ## Main services
 
@@ -16,69 +12,50 @@ molsys-ai-server
 │   ├── model backend
 │   ├── generation API
 │   └── streaming
-├── knowledge service
+├── MolSysSuite Software Knowledge Service
 │   ├── documentation corpus
 │   ├── API surfaces and symbol cards
 │   ├── recipes and tutorials
-│   ├── hybrid retrieval
-│   ├── citations
+│   ├── retrieval / RAG
+│   ├── citations and provenance
 │   └── API-symbol guardrails
 ├── documentation assistants
-│   ├── MolSysMT
-│   ├── MolSysViewer
-│   ├── TopoMT
-│   ├── PharmacophoreMT
-│   └── future MolSysSuite tools
 ├── authentication and quotas
 └── deployment and observability
 ```
 
-## Confirmed principles inherited from the current repository
+RAG is an implementation technique inside Software Knowledge, not the identity of the service or product.
 
-- The inference environment remains isolated from MolSysSuite toolchains.
-- Corpus construction is reproducible and can run offline.
-- API information can be extracted with AST without importing upstream packages.
-- Retrieval is project-aware and code-aware.
-- Symbol verification and symbol re-reading reduce invented or misused APIs.
-- Documentation answers should provide sources and stable citations.
+## Consumers
+
+Software Knowledge may serve:
+
+- the documentation chatbot;
+- MolSys-AI Agent;
+- MolSys-AI Client consumers;
+- future MolSysSuite-facing applications.
+
+The documentation chatbot is the first operational consumer and its capability must remain available during restructuring, but its current endpoint/module implementation is not architecturally frozen.
 
 ## Server boundary
 
-The server must not own:
+The server must not own active molecular systems, a user's live MolSysViewer canvas, local file access, MolSysSuite tool execution, the specialist-agent loop, or authoritative scientific project history.
 
-- active molecular systems,
-- a user's live MolSysViewer canvas,
-- local file access,
-- MolSysSuite tool execution,
-- the scientific agent loop,
-- reproducible local project history.
+Those responsibilities belong to the scientific/agent environment, primarily `molsys-ai-agent` where agent behavior is concerned.
 
-Those belong to `molsys-ai` in the user's environment.
+## Confirmed principles
 
-## Knowledge-service role
-
-RAG remains useful, but it is an internal retrieval technique rather than the identity of the product. The service should expose grounded knowledge through stable contracts such as:
-
-- answer a documentation question,
-- retrieve relevant source fragments,
-- retrieve a symbol card,
-- retrieve recipes for a capability,
-- validate whether a documented symbol exists,
-- report corpus versions and provenance.
+- Inference remains separable from MolSysSuite toolchains.
+- Corpus construction is reproducible and can run offline.
+- Retrieval is project-aware and code-aware.
+- Symbol verification/re-reading reduces invented or misused APIs.
+- Grounded answers provide sources and stable citations.
+- Server contracts should be versioned and capability-discoverable.
 
 ## Documentation assistants
 
-Each MolSysSuite project should be able to embed a specialized chatbot in its documentation. These assistants use the shared server but apply project filters, presentation rules and tool-specific sources.
+Documentation assistants are narrow consumers of inference + Software Knowledge. They execute no local scientific tools and require no private molecular session.
 
-They are not reduced versions of the local copilot. They are public knowledge products with a narrower permission model:
+## Evolution
 
-- no local scientific execution,
-- no private molecular data,
-- no persistent molecular session,
-- grounded explanations and code examples.
-
-## Authentication and user profiles
-
-**Remembered — verify:** earlier plans may have included tokenized profiles or per-user access tokens.
-
-The server should support opaque credentials and server-side policy without depending on a particular client profile format. Profile definitions belong to the client side; authentication and authorization belong here.
+Current `POST /v1/chat` may remain as a compatibility facade while more explicit inference, knowledge, and documentation-assistant contracts evolve.
